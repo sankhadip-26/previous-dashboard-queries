@@ -1,0 +1,451 @@
+function BuBrandWise() {
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("BU BRAND WISE");
+
+  if (!sheet) {
+    throw new Error("Sheet 'SUBTOTAL' not found.");
+  }
+
+  // =========================================================
+  // SETTINGS
+  // =========================================================
+
+  const startRow = 3;
+  const lastCol = 14; // A:N
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow < startRow) return;
+
+  const numRows = lastRow - startRow + 1;
+
+
+  // =========================================================
+  // COLOURS
+  // =========================================================
+
+  // One common BU colour
+  const buColor = "#D9EAF7";
+
+  // SUBTOTAL highlight
+  const subtotalColor = "#D9D9D9";
+
+
+  // =========================================================
+  // 1. REMOVE ALL EXISTING FORMATTING
+  //    ROW 1 AND ROW 2 ARE NOT TOUCHED
+  // =========================================================
+
+  sheet
+    .getRange(startRow, 1, numRows, lastCol)
+    .clearFormat();
+
+
+  // =========================================================
+  // 2. BASIC FORMATTING
+  // =========================================================
+
+  sheet
+    .getRange(startRow, 1, numRows, lastCol)
+    .setFontFamily("Calibri")
+    .setFontSize(10)
+    .setFontWeight("normal")
+    .setVerticalAlignment("middle")
+    .setBackground(buColor);
+
+
+  // =========================================================
+  // 3. ALIGNMENT
+  // =========================================================
+
+  // A:B = LEFT
+  sheet
+    .getRange(startRow, 1, numRows, 2)
+    .setHorizontalAlignment("left");
+
+
+  // C:N = RIGHT
+  sheet
+    .getRange(startRow, 3, numRows, 12)
+    .setHorizontalAlignment("right");
+
+
+  // =========================================================
+  // 4. READ DATA
+  // =========================================================
+
+  const data = sheet
+    .getRange(startRow, 1, numRows, lastCol)
+    .getValues();
+
+
+  // =========================================================
+  // 5. BRAND FORMATTING
+  // =========================================================
+  //
+  // Brand is in column B.
+  //
+  // Normal brand rows = bold brand name.
+  //
+  // SUBTOTAL rows = entire row highlighted.
+  // =========================================================
+
+  for (let i = 0; i < data.length; i++) {
+
+    const rowNumber = startRow + i;
+
+    const brand =
+      String(data[i][1] ?? "")
+        .trim()
+        .toUpperCase();
+
+
+    // -------------------------------------------------------
+    // SUBTOTAL
+    // -------------------------------------------------------
+
+    if (brand === "SUBTOTAL") {
+
+      sheet
+        .getRange(rowNumber, 1, 1, lastCol)
+        .setBackground(subtotalColor)
+        .setFontWeight("bold");
+
+
+      // Strong bottom border
+
+      sheet
+        .getRange(rowNumber, 1, 1, lastCol)
+        .setBorder(
+          false,
+          false,
+          true,
+          false,
+          false,
+          false,
+          "#777777",
+          SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+        );
+
+    }
+
+
+    // -------------------------------------------------------
+    // NORMAL BRAND
+    // -------------------------------------------------------
+
+    else if (brand !== "") {
+
+      sheet
+        .getRange(rowNumber, 2)
+        .setFontWeight("bold");
+
+    }
+  }
+
+
+  // =========================================================
+  // 6. REMOVE EXTRA VERTICAL BORDERS
+  // =========================================================
+  //
+  // Only clean KPI group separators will remain.
+  // =========================================================
+
+  sheet
+    .getRange(startRow, 1, numRows, lastCol)
+    .setBorder(
+      null,
+      null,
+      null,
+      null,
+      false,
+      null
+    );
+
+
+  // =========================================================
+  // 7. KPI GROUP SEPARATORS
+  // =========================================================
+  //
+  // C:E = GMV
+  // F   = Growth
+  //
+  // G:I = QTY
+  // J   = Growth
+  //
+  // K:L = ASP
+  //
+  // M:N = TD
+  //
+  // Strong separator after:
+  //
+  // F = GMV group
+  // J = QTY group
+  // L = ASP group
+  // N = TD group
+  // =========================================================
+
+
+  // ---------------------------------------------------------
+  // After GMV + Growth = F
+  // ---------------------------------------------------------
+
+  sheet
+    .getRange(startRow, 6, numRows, 1)
+    .setBorder(
+      null,
+      null,
+      null,
+      true,
+      null,
+      null,
+      "#777777",
+      SpreadsheetApp.BorderStyle.SOLID
+    );
+
+
+  // ---------------------------------------------------------
+  // After QTY + Growth = J
+  // ---------------------------------------------------------
+
+  sheet
+    .getRange(startRow, 10, numRows, 1)
+    .setBorder(
+      null,
+      null,
+      null,
+      true,
+      null,
+      null,
+      "#777777",
+      SpreadsheetApp.BorderStyle.SOLID
+    );
+
+
+  // ---------------------------------------------------------
+  // After ASP = L
+  // ---------------------------------------------------------
+
+  sheet
+    .getRange(startRow, 12, numRows, 1)
+    .setBorder(
+      null,
+      null,
+      null,
+      true,
+      null,
+      null,
+      "#777777",
+      SpreadsheetApp.BorderStyle.SOLID
+    );
+
+
+  // ---------------------------------------------------------
+  // After TD = N
+  // ---------------------------------------------------------
+
+  sheet
+    .getRange(startRow, 14, numRows, 1)
+    .setBorder(
+      null,
+      null,
+      null,
+      true,
+      null,
+      null,
+      "#777777",
+      SpreadsheetApp.BorderStyle.SOLID
+    );
+
+
+  // =========================================================
+  // 8. NUMBER FORMATS
+  // =========================================================
+
+  // GMV C:E
+
+  sheet
+    .getRange(startRow, 3, numRows, 3)
+    .setNumberFormat("0.00");
+
+
+  // GMV Growth F
+
+  sheet
+    .getRange(startRow, 6, numRows, 1)
+    .setNumberFormat("0.00%");
+
+
+  // QTY G:I
+
+  sheet
+    .getRange(startRow, 7, numRows, 3)
+    .setNumberFormat("#,##0");
+
+
+  // QTY Growth J
+
+  sheet
+    .getRange(startRow, 10, numRows, 1)
+    .setNumberFormat("0.00%");
+
+
+  // ASP K:L
+
+  sheet
+    .getRange(startRow, 11, numRows, 2)
+    .setNumberFormat("#,##0");
+
+
+  // TD M:N
+
+  sheet
+    .getRange(startRow, 13, numRows, 2)
+    .setNumberFormat("0");
+
+
+  // =========================================================
+  // 9. CONDITIONAL FORMATTING
+  // =========================================================
+  //
+  // Growth columns:
+  //
+  // F = GMV Growth
+  // J = QTY Growth
+  //
+  // < 0%       = RED
+  // 0% - 10%   = YELLOW
+  // > 10%      = GREEN
+  // =========================================================
+
+  const gmvGrowthRange =
+    sheet.getRange(startRow, 6, numRows, 1);
+
+  const qtyGrowthRange =
+    sheet.getRange(startRow, 10, numRows, 1);
+
+
+  // Get existing conditional formatting rules
+
+  let rules = sheet.getConditionalFormatRules();
+
+
+  // Remove rules affecting F or J
+
+  rules = rules.filter(function(rule) {
+
+    return !rule.getRanges().some(function(range) {
+
+      const firstCol = range.getColumn();
+
+      const lastRuleCol =
+        firstCol + range.getNumColumns() - 1;
+
+      const overlapsF =
+        firstCol <= 6 &&
+        lastRuleCol >= 6;
+
+      const overlapsJ =
+        firstCol <= 10 &&
+        lastRuleCol >= 10;
+
+      return overlapsF || overlapsJ;
+    });
+  });
+
+
+  // ---------------------------------------------------------
+  // RED
+  // ---------------------------------------------------------
+
+  rules.push(
+    SpreadsheetApp
+      .newConditionalFormatRule()
+      .whenNumberLessThan(0)
+      .setBackground("#F4CCCC")
+      .setFontColor("#9C0006")
+      .setRanges([
+        gmvGrowthRange,
+        qtyGrowthRange
+      ])
+      .build()
+  );
+
+
+  // ---------------------------------------------------------
+  // YELLOW
+  // ---------------------------------------------------------
+
+  rules.push(
+    SpreadsheetApp
+      .newConditionalFormatRule()
+      .whenNumberBetween(0, 0.10)
+      .setBackground("#FFF2CC")
+      .setFontColor("#7F6000")
+      .setRanges([
+        gmvGrowthRange,
+        qtyGrowthRange
+      ])
+      .build()
+  );
+
+
+  // ---------------------------------------------------------
+  // GREEN
+  // ---------------------------------------------------------
+
+  rules.push(
+    SpreadsheetApp
+      .newConditionalFormatRule()
+      .whenNumberGreaterThan(0.10)
+      .setBackground("#D9EAD3")
+      .setFontColor("#274E13")
+      .setRanges([
+        gmvGrowthRange,
+        qtyGrowthRange
+      ])
+      .build()
+  );
+
+
+  sheet.setConditionalFormatRules(rules);
+
+
+  // =========================================================
+  // 10. COLUMN WIDTHS
+  // =========================================================
+
+  sheet.setColumnWidth(1, 120);
+  sheet.setColumnWidth(2, 150);
+
+  sheet.setColumnWidth(3, 90);
+  sheet.setColumnWidth(4, 100);
+  sheet.setColumnWidth(5, 100);
+  sheet.setColumnWidth(6, 100);
+
+  sheet.setColumnWidth(7, 90);
+  sheet.setColumnWidth(8, 100);
+  sheet.setColumnWidth(9, 100);
+  sheet.setColumnWidth(10, 90);
+
+  sheet.setColumnWidth(11, 90);
+  sheet.setColumnWidth(12, 90);
+
+  sheet.setColumnWidth(13, 100);
+  sheet.setColumnWidth(14, 100);
+
+
+  // =========================================================
+  // 11. ROW HEIGHT
+  // =========================================================
+
+  sheet.setRowHeights(startRow, numRows, 22);
+
+
+  // =========================================================
+  // 12. FREEZE ROW 2
+  // =========================================================
+
+  sheet.setFrozenRows(2);
+  sheet.setFrozenColumns(2);
+}
