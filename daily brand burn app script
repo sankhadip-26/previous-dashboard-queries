@@ -1,0 +1,1818 @@
+function createDailyBUBrandBurnReport() {
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  const SOURCE_SHEET = "Burn query";
+  const OUTPUT_SHEET = "BRAND BURN DAILY";
+
+  const source = ss.getSheetByName(SOURCE_SHEET);
+
+  if (!source) {
+    throw new Error("Source sheet '" + SOURCE_SHEET + "' not found.");
+  }
+
+  let output = ss.getSheetByName(OUTPUT_SHEET);
+
+  if (!output) {
+    output = ss.insertSheet(OUTPUT_SHEET);
+  }
+
+  // =====================================================
+  // READ SOURCE DATA
+  // =====================================================
+
+  const sourceData = source.getDataRange().getValues();
+
+  if (sourceData.length < 2) {
+    output.clear();
+    return;
+  }
+
+  const headers = sourceData[0];
+
+  const dateIndex = headers.indexOf("DATE");
+  const buIndex = headers.indexOf("MASTER BU");
+  const brandIndex = headers.indexOf("BRAND");
+  const burnIndex = headers.indexOf("BURN");
+  const totalBurnIndex = headers.indexOf("TOTAL_BURN");
+  const rowTypeIndex = headers.indexOf("ROW_TYPE");
+
+  if (
+    dateIndex === -1 ||
+    buIndex === -1 ||
+    brandIndex === -1 ||
+    burnIndex === -1 ||
+    totalBurnIndex === -1 ||
+    rowTypeIndex === -1
+  ) {
+    throw new Error(
+      "Required columns not found. Required: DATE, MASTER BU, BRAND, BURN, TOTAL_BURN, ROW_TYPE"
+    );
+  }
+
+  // =====================================================
+  // PREPARE DATA
+  // =====================================================
+
+  const brandData = {};
+  const subtotalData = {};
+  const platformData = {};
+
+  const dateSet = new Set();
+
+  const buOrder = [];
+  const buSeen = new Set();
+
+  for (let i = 1; i < sourceData.length; i++) {
+
+    const row = sourceData[i];
+
+    let date = row[dateIndex];
+    const bu = row[buIndex];
+    const brand = row[brandIndex];
+    const rowType = row[rowTypeIndex];
+
+    if (!bu || !date) continue;
+
+    // ===================================================
+    // NORMALIZE DATE
+    // ===================================================
+
+    if (!(date instanceof Date)) {
+      date = new Date(date);
+    }
+
+    if (isNaN(date.getTime())) continue;
+
+    const dateKey = Utilities.formatDate(
+      date,
+      Session.getScriptTimeZone(),
+      "yyyy-MM-dd"
+    );
+
+    dateSet.add(dateKey);
+
+    // ===================================================
+    // KEEP BU ORDER FROM SOURCE
+    // PLATFORM IS KEPT SEPARATELY
+    // ===================================================
+
+    if (
+      bu !== "PLATFORM" &&
+      !buSeen.has(bu)
+    ) {
+      buSeen.add(bu);
+      buOrder.push(bu);
+    }
+
+    // ===================================================
+    // BRAND ROW
+    // ===================================================
+
+    if (rowType === "BRAND") {
+
+      if (!brandData[bu]) {
+        brandData[bu] = {};
+      }
+
+      if (!brandData[bu][brand]) {
+        brandData[bu][brand] = {
+          dates: {},
+          totalBurn: 0
+        };
+      }
+
+      const burn = Number(row[burnIndex]) || 0;
+      const totalBurn = Number(row[totalBurnIndex]) || 0;
+
+      brandData[bu][brand].dates[dateKey] = {
+        burn: burn
+      };
+
+      brandData[bu][brand].totalBurn = totalBurn;
+    }
+
+    // ===================================================
+    // BU SUBTOTAL ROW
+    // ===================================================
+
+    if (rowType === "BU_SUBTOTAL") {
+
+      if (!subtotalData[bu]) {
+        subtotalData[bu] = {
+          dates: {},
+          totalBurn: 0
+        };
+      }
+
+      subtotalData[bu].dates[dateKey] = {
+        burn: Number(row[burnIndex]) || 0
+      };
+
+      subtotalData[bu].totalBurn =
+        Number(row[totalBurnIndex]) || 0;
+    }
+
+    // ===================================================
+    // PLATFORM TOTAL ROW
+    // ===================================================
+
+    if (rowType === "PLATFORM_TOTAL") {
+
+      platformData[dateKey] = {
+        burn: Number(row[burnIndex]) || 0,
+        totalBurn: Number(row[totalBurnIndex]) || 0
+      };
+    }
+  }
+
+  // =====================================================
+  // SORT DATES
+  // =====================================================
+
+  const dates = Array.from(dateSet).sort().reverse();
+
+  // =====================================================
+  // CLEAR OLD OUTPUT COMPLETELY
+  // =====================================================
+
+  if (output.getFilter()) {
+    output.getFilter().remove();
+  }
+
+  output
+    .getRange(
+      1,
+      1,
+      Math.max(output.getMaxRows(), 1),
+      Math.max(output.getMaxColumns(), 1)
+    )
+    .breakApart();
+
+  output.clear();
+
+  // =====================================================
+  // COLUMN STRUCTURE
+  // =====================================================
+
+  // A = MASTER BU
+  // B = BRAND
+  // C onwards = DATE / BURN
+  // Last column = TOTAL BURN
+
+  const totalColumns = 2 + dates.length + 1;
+
+  // =====================================================
+  // COUNT REQUIRED ROWS
+  // =====================================================
+
+  let totalRows = 1;
+
+  buOrder.forEach(function (bu) {
+
+    const brands = brandData[bu]
+      ? Object.keys(brandData[bu])
+      : [];
+
+    totalRows += brands.length;
+
+    if (subtotalData[bu]) {
+      totalRows += 1;
+    }
+  });
+
+  // Platform row
+  if (Object.keys(platformData).length > 0) {
+    totalRows += 1;
+  }
+
+  // =====================================================
+  // AUTO EXPAND SHEET
+  // =====================================================
+
+  if (output.getMaxRows() < totalRows) {
+    output.insertRowsAfter(
+      output.getMaxRows(),
+      totalRows - output.getMaxRows()
+    );
+  }
+
+  if (output.getMaxColumns() < totalColumns) {
+    output.insertColumnsAfter(
+      output.getMaxColumns(),
+      totalColumns - output.getMaxColumns()
+    );
+  }
+
+  // =====================================================
+  // ROW 1 - SINGLE HEADER
+  // =====================================================
+
+  const headerRow = [
+    "MASTER BU",
+    "BRAND"
+  ];
+
+  dates.forEach(function (dateKey) {
+
+    const date = new Date(dateKey + "T00:00:00");
+
+    headerRow.push(date);
+  });
+
+  headerRow.push("TOTAL BURN");
+
+  output
+    .getRange(
+      1,
+      1,
+      1,
+      headerRow.length
+    )
+    .setValues([headerRow]);
+
+  // =====================================================
+  // FORMAT DATE HEADERS
+  // =====================================================
+
+  if (dates.length > 0) {
+
+    output
+      .getRange(
+        1,
+        3,
+        1,
+        dates.length
+      )
+      .setNumberFormat("dd-mmm-yyyy");
+  }
+
+  // =====================================================
+  // DATA ROWS
+  // =====================================================
+
+  let currentRow = 2;
+
+  const buBlocks = [];
+
+  // =====================================================
+  // BU + BRAND DATA
+  // =====================================================
+
+  buOrder.forEach(function (bu) {
+
+    const blockStartRow = currentRow;
+
+    // const brands = brandData[bu]
+    //   ? Object.keys(brandData[bu]).sort()
+    //   : [];
+    const brands = brandData[bu]
+  ? Object.keys(brandData[bu]).sort(function (a, b) {
+      return (
+        (brandData[bu][b].totalBurn || 0) -
+        (brandData[bu][a].totalBurn || 0)
+      );
+    })
+  : [];
+
+    // ===================================================
+    // BRAND ROWS
+    // ===================================================
+
+    brands.forEach(function (brand) {
+
+      const item = brandData[bu][brand];
+
+      const rowOutput = [
+        bu,
+        brand
+      ];
+
+      // Daily burn
+      dates.forEach(function (dateKey) {
+
+        const day = item.dates[dateKey];
+
+        if (day) {
+          rowOutput.push(day.burn);
+        } else {
+          rowOutput.push("");
+        }
+      });
+
+      // Total burn
+      rowOutput.push(item.totalBurn);
+
+      output
+        .getRange(
+          currentRow,
+          1,
+          1,
+          rowOutput.length
+        )
+        .setValues([rowOutput]);
+
+      currentRow++;
+    });
+
+    // ===================================================
+    // BU SUBTOTAL
+    // ===================================================
+
+    if (subtotalData[bu]) {
+
+      const subtotal = subtotalData[bu];
+
+      const subtotalRow = [
+        bu,
+        "SUBTOTAL"
+      ];
+
+      dates.forEach(function (dateKey) {
+
+        const day = subtotal.dates[dateKey];
+
+        if (day) {
+          subtotalRow.push(day.burn);
+        } else {
+          subtotalRow.push("");
+        }
+      });
+
+      subtotalRow.push(subtotal.totalBurn);
+
+      output
+        .getRange(
+          currentRow,
+          1,
+          1,
+          subtotalRow.length
+        )
+        .setValues([subtotalRow]);
+
+      currentRow++;
+    }
+
+    const blockEndRow = currentRow - 1;
+
+    buBlocks.push({
+      bu: bu,
+      startRow: blockStartRow,
+      endRow: blockEndRow,
+      subtotalRow: subtotalData[bu]
+        ? blockEndRow
+        : null
+    });
+  });
+
+  // =====================================================
+  // PLATFORM TOTAL
+  // =====================================================
+
+  let platformRow = null;
+
+  if (Object.keys(platformData).length > 0) {
+
+    platformRow = currentRow;
+
+    const platformOutput = [
+      "PLATFORM",
+      "SUBTOTAL"
+    ];
+
+    dates.forEach(function (dateKey) {
+
+      const day = platformData[dateKey];
+
+      if (day) {
+        platformOutput.push(day.burn);
+      } else {
+        platformOutput.push("");
+      }
+    });
+
+    // Platform total across all dates
+    const firstPlatformDate =
+      Object.keys(platformData)[0];
+
+    platformOutput.push(
+      platformData[firstPlatformDate]
+        ? platformData[firstPlatformDate].totalBurn
+        : 0
+    );
+
+    output
+      .getRange(
+        platformRow,
+        1,
+        1,
+        platformOutput.length
+      )
+      .setValues([platformOutput]);
+
+    currentRow++;
+  }
+
+  // =====================================================
+  // BASIC FORMATTING
+  // =====================================================
+
+  output
+    .getRange(
+      1,
+      1,
+      totalRows,
+      totalColumns
+    )
+    .setFontFamily("Calibri")
+    .setFontSize(10)
+    .setVerticalAlignment("middle");
+
+  // =====================================================
+  // HEADER FORMATTING
+  // =====================================================
+
+  output
+    .getRange(
+      1,
+      1,
+      1,
+      totalColumns
+    )
+    .setFontWeight("bold")
+    .setVerticalAlignment("middle")
+    .setHorizontalAlignment("center")
+    .setBackground("#F3F3F3");
+
+  // =====================================================
+  // NUMBER FORMATTING
+  // =====================================================
+
+  const dataRows = Math.max(totalRows - 1, 1);
+
+  // Daily BURN columns
+  for (let i = 0; i < dates.length; i++) {
+
+    const burnColumn = 3 + i;
+
+    output
+      .getRange(
+        2,
+        burnColumn,
+        dataRows,
+        1
+      )
+      .setNumberFormat("#,##0.000")
+      .setHorizontalAlignment("right");
+  }
+
+  // TOTAL BURN
+  const totalBurnColumn = totalColumns;
+
+  output
+    .getRange(
+      2,
+      totalBurnColumn,
+      dataRows,
+      1
+    )
+    .setNumberFormat("#,##0.000")
+    .setHorizontalAlignment("right");
+
+  // =====================================================
+  // COLUMN WIDTHS
+  // =====================================================
+
+  output.setColumnWidth(1, 130);
+  output.setColumnWidth(2, 180);
+
+  dates.forEach(function (_, index) {
+
+    const burnColumn = 3 + index;
+
+    output.setColumnWidth(
+      burnColumn,
+      85
+    );
+  });
+
+  output.setColumnWidth(
+    totalBurnColumn,
+    105
+  );
+
+  // =====================================================
+  // ROW HEIGHTS
+  // =====================================================
+
+  output.setRowHeight(1, 28);
+
+  if (totalRows > 1) {
+
+    output.setRowHeights(
+      2,
+      totalRows - 1,
+      22
+    );
+  }
+
+  // =====================================================
+  // REMOVE ALL BORDERS
+  // =====================================================
+
+  output
+    .getRange(
+      1,
+      1,
+      totalRows,
+      totalColumns
+    )
+    .setBorder(
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    );
+
+  // =====================================================
+  // HEADER BOTTOM BORDER
+  // =====================================================
+
+  output
+    .getRange(
+      1,
+      1,
+      1,
+      totalColumns
+    )
+    .setBorder(
+      null,
+      null,
+      true,
+      null,
+      null,
+      null
+    );
+
+  // =====================================================
+  // VERTICAL SEPARATOR AFTER BRAND
+  // =====================================================
+
+  output
+    .getRange(
+      1,
+      2,
+      totalRows,
+      1
+    )
+    .setBorder(
+      null,
+      null,
+      null,
+      true,
+      null,
+      null
+    );
+
+  // =====================================================
+  // VERTICAL SEPARATOR AFTER EACH DATE
+  // =====================================================
+
+  for (let i = 0; i < dates.length; i++) {
+
+    const burnColumn = 3 + i;
+
+    output
+      .getRange(
+        1,
+        burnColumn,
+        totalRows,
+        1
+      )
+      .setBorder(
+        null,
+        null,
+        null,
+        true,
+        null,
+        null
+      );
+  }
+
+  // =====================================================
+  // SEPARATOR BEFORE TOTAL BURN
+  // =====================================================
+
+  output
+    .getRange(
+      1,
+      totalBurnColumn,
+      totalRows,
+      1
+    )
+    .setBorder(
+      null,
+      true,
+      null,
+      null,
+      null,
+      null
+    );
+
+  // =====================================================
+  // BU COLOUR SHADING
+  // =====================================================
+
+  const buColors = [
+    "#EAF2F8",
+    "#FCE4EC",
+    "#E8F5E9",
+    "#FFF3E0",
+    "#F3E5F5",
+    "#E0F7FA",
+    "#FFFDE7",
+    "#ECEFF1",
+    "#FBE9E7",
+    "#E8EAF6"
+  ];
+
+  const subtotalColor = "#D9EAD3";
+  const platformColor = "#B7B7B7";
+
+  buBlocks.forEach(function (block, index) {
+
+    const color =
+      buColors[index % buColors.length];
+
+    // Entire BU block
+    output
+      .getRange(
+        block.startRow,
+        1,
+        block.endRow - block.startRow + 1,
+        totalColumns
+      )
+      .setBackground(color);
+
+    // BU name bold
+    output
+      .getRange(
+        block.startRow,
+        1,
+        block.endRow - block.startRow + 1,
+        1
+      )
+      .setFontWeight("bold");
+
+    // ===================================================
+    // SUBTOTAL ROW
+    // ===================================================
+
+    if (block.subtotalRow) {
+
+      output
+        .getRange(
+          block.subtotalRow,
+          1,
+          1,
+          totalColumns
+        )
+        .setBackground(subtotalColor)
+        .setFontWeight("bold");
+
+      output
+        .getRange(
+          block.subtotalRow,
+          1,
+          1,
+          totalColumns
+        )
+        .setBorder(
+          true,
+          null,
+          null,
+          null,
+          null,
+          null
+        );
+    }
+  });
+
+  // =====================================================
+  // PLATFORM ROW FORMATTING
+  // =====================================================
+
+  if (platformRow) {
+
+    output
+      .getRange(
+        platformRow,
+        1,
+        1,
+        totalColumns
+      )
+      .setBackground(platformColor)
+      .setFontWeight("bold");
+
+    output
+      .getRange(
+        platformRow,
+        1,
+        1,
+        totalColumns
+      )
+      .setBorder(
+        true,
+        null,
+        true,
+        null,
+        null,
+        null
+      );
+  }
+
+  // =====================================================
+  // TOTAL BURN COLUMN
+  // =====================================================
+
+  output
+    .getRange(
+      1,
+      totalBurnColumn,
+      totalRows,
+      1
+    )
+    .setFontWeight("bold");
+
+  // =====================================================
+  // REAPPLY HEADER BACKGROUND
+  // =====================================================
+
+  output
+    .getRange(
+      1,
+      1,
+      1,
+      totalColumns
+    )
+    .setBackground("#F3F3F3")
+    .setFontWeight("bold");
+
+  // =====================================================
+  // REAPPLY SUBTOTAL COLORS
+  // =====================================================
+
+  buBlocks.forEach(function (block) {
+
+    if (block.subtotalRow) {
+
+      output
+        .getRange(
+          block.subtotalRow,
+          1,
+          1,
+          totalColumns
+        )
+        .setBackground(subtotalColor)
+        .setFontWeight("bold");
+    }
+  });
+
+  // =====================================================
+  // REAPPLY PLATFORM COLOR
+  // =====================================================
+
+  if (platformRow) {
+
+    output
+      .getRange(
+        platformRow,
+        1,
+        1,
+        totalColumns
+      )
+      .setBackground(platformColor)
+      .setFontWeight("bold");
+  }
+
+  // =====================================================
+  // FREEZE
+  // =====================================================
+
+  output.setFrozenRows(1);
+  output.setFrozenColumns(2);
+
+  // =====================================================
+  // REMOVE OLD FILTER
+  // =====================================================
+
+  if (output.getFilter()) {
+    output.getFilter().remove();
+  }
+
+  // =====================================================
+  // CREATE FILTER
+  // =====================================================
+
+  output
+    .getRange(
+      1,
+      1,
+      Math.max(totalRows, 1),
+      2
+    )
+    .createFilter();
+
+  // =====================================================
+  // ALIGNMENT
+  // =====================================================
+
+  if (totalRows > 1) {
+
+    output
+      .getRange(
+        2,
+        1,
+        totalRows - 1,
+        2
+      )
+      .setHorizontalAlignment("left");
+
+    output
+      .getRange(
+        2,
+        3,
+        totalRows - 1,
+        totalColumns - 2
+      )
+      .setHorizontalAlignment("right");
+  }
+
+  // =====================================================
+  // FINAL FLUSH
+  // =====================================================
+
+  SpreadsheetApp.flush();
+}
+
+
+
+
+// function createDailyBUBurnReport() {
+
+//   const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+//   const SOURCE_SHEET = "Burn query";
+//   const OUTPUT_SHEET = "BRAND BURN DAILY";
+
+//   const source = ss.getSheetByName(SOURCE_SHEET);
+
+//   if (!source) {
+//     throw new Error("Source sheet '" + SOURCE_SHEET + "' not found.");
+//   }
+
+//   let output = ss.getSheetByName(OUTPUT_SHEET);
+
+//   if (!output) {
+//     output = ss.insertSheet(OUTPUT_SHEET);
+//   }
+
+//   // =====================================================
+//   // READ SOURCE DATA
+//   // =====================================================
+
+//   const sourceData = source.getDataRange().getValues();
+
+//   if (sourceData.length < 2) {
+//     output.clear();
+//     return;
+//   }
+
+//   const headers = sourceData[0];
+
+//   const dateIndex = headers.indexOf("DATE");
+//   const buIndex = headers.indexOf("MASTER BU");
+//   const brandIndex = headers.indexOf("BRAND");
+//   const burnIndex = headers.indexOf("BURN");
+//   const totalBurnIndex = headers.indexOf("TOTAL_BURN");
+//   const rowTypeIndex = headers.indexOf("ROW_TYPE");
+
+//   if (
+//     dateIndex === -1 ||
+//     buIndex === -1 ||
+//     brandIndex === -1 ||
+//     burnIndex === -1 ||
+//     totalBurnIndex === -1 ||
+//     rowTypeIndex === -1
+//   ) {
+//     throw new Error(
+//       "Required columns not found. Required: DATE, MASTER BU, BRAND, BURN, TOTAL_BURN, ROW_TYPE"
+//     );
+//   }
+
+//   // =====================================================
+//   // PREPARE DATA
+//   // =====================================================
+
+//   const brandData = {};
+//   const subtotalData = {};
+//   const platformData = {};
+
+//   const dateSet = new Set();
+
+//   const buOrder = [];
+//   const buSeen = new Set();
+
+//   for (let i = 1; i < sourceData.length; i++) {
+
+//     const row = sourceData[i];
+
+//     let date = row[dateIndex];
+//     const bu = row[buIndex];
+//     const brand = row[brandIndex];
+//     const rowType = row[rowTypeIndex];
+
+//     if (!bu || !date) continue;
+
+//     // ===================================================
+//     // NORMALIZE DATE
+//     // ===================================================
+
+//     if (!(date instanceof Date)) {
+//       date = new Date(date);
+//     }
+
+//     if (isNaN(date.getTime())) continue;
+
+//     const dateKey = Utilities.formatDate(
+//       date,
+//       Session.getScriptTimeZone(),
+//       "yyyy-MM-dd"
+//     );
+
+//     dateSet.add(dateKey);
+
+//     // ===================================================
+//     // KEEP BU ORDER FROM SOURCE
+//     // PLATFORM IS KEPT SEPARATELY
+//     // ===================================================
+
+//     if (
+//       bu !== "PLATFORM" &&
+//       !buSeen.has(bu)
+//     ) {
+//       buSeen.add(bu);
+//       buOrder.push(bu);
+//     }
+
+//     // ===================================================
+//     // BRAND ROW
+//     // ===================================================
+
+//     if (rowType === "BRAND") {
+
+//       if (!brandData[bu]) {
+//         brandData[bu] = {};
+//       }
+
+//       if (!brandData[bu][brand]) {
+//         brandData[bu][brand] = {
+//           dates: {},
+//           totalBurn: 0
+//         };
+//       }
+
+//       const burn = Number(row[burnIndex]) || 0;
+//       const totalBurn = Number(row[totalBurnIndex]) || 0;
+
+//       brandData[bu][brand].dates[dateKey] = {
+//         burn: burn
+//       };
+
+//       // TOTAL_BURN is repeated for every date,
+//       // so take it from the source row.
+//       brandData[bu][brand].totalBurn = totalBurn;
+//     }
+
+//     // ===================================================
+//     // BU SUBTOTAL ROW
+//     // ===================================================
+
+//     if (rowType === "BU_SUBTOTAL") {
+
+//       if (!subtotalData[bu]) {
+//         subtotalData[bu] = {
+//           dates: {},
+//           totalBurn: 0
+//         };
+//       }
+
+//       subtotalData[bu].dates[dateKey] = {
+//         burn: Number(row[burnIndex]) || 0
+//       };
+
+//       subtotalData[bu].totalBurn =
+//         Number(row[totalBurnIndex]) || 0;
+//     }
+
+//     // ===================================================
+//     // PLATFORM TOTAL ROW
+//     // ===================================================
+
+//     if (rowType === "PLATFORM_TOTAL") {
+
+//       platformData[dateKey] = {
+//         burn: Number(row[burnIndex]) || 0,
+//         totalBurn: Number(row[totalBurnIndex]) || 0
+//       };
+//     }
+//   }
+
+//   // =====================================================
+//   // SORT DATES
+//   // =====================================================
+
+//   const dates = Array.from(dateSet).sort();
+
+//   // =====================================================
+//   // CLEAR OLD OUTPUT COMPLETELY
+//   // =====================================================
+
+//   // Remove old filter first
+//   if (output.getFilter()) {
+//     output.getFilter().remove();
+//   }
+
+//   // Remove old merged cells
+//   output
+//     .getRange(
+//       1,
+//       1,
+//       Math.max(output.getMaxRows(), 2),
+//       Math.max(output.getMaxColumns(), 2)
+//     )
+//     .breakApart();
+
+//   // Clear contents + formatting
+//   output.clear();
+
+//   // =====================================================
+//   // COLUMN STRUCTURE
+//   // =====================================================
+
+//   // A = MASTER BU
+//   // B = BRAND
+//   //
+//   // Every date = 1 BURN column
+//   //
+//   // Last column = TOTAL BURN
+
+//   const totalColumns = 2 + dates.length + 1;
+
+//   // =====================================================
+//   // COUNT REQUIRED ROWS
+//   // =====================================================
+
+//   let totalRows = 2;
+
+//   buOrder.forEach(function (bu) {
+
+//     const brands = brandData[bu]
+//       ? Object.keys(brandData[bu])
+//       : [];
+
+//     totalRows += brands.length;
+
+//     // BU subtotal
+//     if (subtotalData[bu]) {
+//       totalRows += 1;
+//     }
+//   });
+
+//   // Platform row
+//   if (Object.keys(platformData).length > 0) {
+//     totalRows += 1;
+//   }
+
+//   // =====================================================
+//   // AUTO EXPAND SHEET
+//   // =====================================================
+
+//   if (output.getMaxRows() < totalRows) {
+//     output.insertRowsAfter(
+//       output.getMaxRows(),
+//       totalRows - output.getMaxRows()
+//     );
+//   }
+
+//   if (output.getMaxColumns() < totalColumns) {
+//     output.insertColumnsAfter(
+//       output.getMaxColumns(),
+//       totalColumns - output.getMaxColumns()
+//     );
+//   }
+
+//   // =====================================================
+//   // ROW 1
+//   // =====================================================
+
+//   output.getRange(1, 1).setValue("");
+//   output.getRange(1, 2).setValue("");
+
+//   // =====================================================
+//   // ROW 2 HEADERS
+//   // =====================================================
+
+//   const headerRow = [
+//     "MASTER BU",
+//     "BRAND"
+//   ];
+
+//   dates.forEach(function () {
+//     headerRow.push("BURN");
+//   });
+
+//   headerRow.push("TOTAL BURN");
+
+//   output
+//     .getRange(2, 1, 1, headerRow.length)
+//     .setValues([headerRow]);
+
+//   // =====================================================
+//   // DATE HEADERS - ROW 1
+//   // =====================================================
+
+//   dates.forEach(function (dateKey, index) {
+
+//     const column = 3 + index;
+
+//     const date = new Date(dateKey + "T00:00:00");
+
+//     output
+//       .getRange(1, column)
+//       .setValue(date)
+//       .setNumberFormat("dd-mmm-yyyy")
+//       .setHorizontalAlignment("center")
+//       .setVerticalAlignment("middle")
+//       .setFontWeight("bold");
+//   });
+
+//   // =====================================================
+//   // DATA ROWS
+//   // =====================================================
+
+//   let currentRow = 3;
+
+//   const buBlocks = [];
+
+//   // =====================================================
+//   // BU + BRAND DATA
+//   // =====================================================
+
+//   buOrder.forEach(function (bu) {
+
+//     const blockStartRow = currentRow;
+
+//     const brands = brandData[bu]
+//       ? Object.keys(brandData[bu]).sort()
+//       : [];
+
+//     // ===================================================
+//     // BRAND ROWS
+//     // ===================================================
+
+//     brands.forEach(function (brand) {
+
+//       const item = brandData[bu][brand];
+
+//       const rowOutput = [
+//         bu,
+//         brand
+//       ];
+
+//       // Daily burn
+//       dates.forEach(function (dateKey) {
+
+//         const day = item.dates[dateKey];
+
+//         if (day) {
+//           rowOutput.push(day.burn);
+//         } else {
+//           rowOutput.push("");
+//         }
+//       });
+
+//       // Total burn
+//       rowOutput.push(item.totalBurn);
+
+//       output
+//         .getRange(
+//           currentRow,
+//           1,
+//           1,
+//           rowOutput.length
+//         )
+//         .setValues([rowOutput]);
+
+//       currentRow++;
+//     });
+
+//     // ===================================================
+//     // BU SUBTOTAL
+//     // ===================================================
+
+//     if (subtotalData[bu]) {
+
+//       const subtotal = subtotalData[bu];
+
+//       const subtotalRow = [
+//         bu,
+//         "SUBTOTAL"
+//       ];
+
+//       dates.forEach(function (dateKey) {
+
+//         const day = subtotal.dates[dateKey];
+
+//         if (day) {
+//           subtotalRow.push(day.burn);
+//         } else {
+//           subtotalRow.push("");
+//         }
+//       });
+
+//       subtotalRow.push(subtotal.totalBurn);
+
+//       output
+//         .getRange(
+//           currentRow,
+//           1,
+//           1,
+//           subtotalRow.length
+//         )
+//         .setValues([subtotalRow]);
+
+//       currentRow++;
+//     }
+
+//     const blockEndRow = currentRow - 1;
+
+//     buBlocks.push({
+//       bu: bu,
+//       startRow: blockStartRow,
+//       endRow: blockEndRow,
+//       subtotalRow: subtotalData[bu]
+//         ? blockEndRow
+//         : null
+//     });
+//   });
+
+//   // =====================================================
+//   // PLATFORM TOTAL
+//   // =====================================================
+
+//   let platformRow = null;
+
+//   if (Object.keys(platformData).length > 0) {
+
+//     platformRow = currentRow;
+
+//     const platformOutput = [
+//       "PLATFORM",
+//       "SUBTOTAL"
+//     ];
+
+//     dates.forEach(function (dateKey) {
+
+//       const day = platformData[dateKey];
+
+//       if (day) {
+//         platformOutput.push(day.burn);
+//       } else {
+//         platformOutput.push("");
+//       }
+//     });
+
+//     // Platform total across all dates
+//     const firstPlatformDate =
+//       Object.keys(platformData)[0];
+
+//     platformOutput.push(
+//       platformData[firstPlatformDate]
+//         ? platformData[firstPlatformDate].totalBurn
+//         : 0
+//     );
+
+//     output
+//       .getRange(
+//         platformRow,
+//         1,
+//         1,
+//         platformOutput.length
+//       )
+//       .setValues([platformOutput]);
+
+//     currentRow++;
+//   }
+
+//   // =====================================================
+//   // BASIC FORMATTING
+//   // =====================================================
+
+//   output
+//     .getRange(
+//       1,
+//       1,
+//       totalRows,
+//       totalColumns
+//     )
+//     .setFontFamily("Calibri")
+//     .setFontSize(10)
+//     .setVerticalAlignment("middle");
+
+//   // =====================================================
+//   // HEADER FORMATTING
+//   // =====================================================
+
+//   output
+//     .getRange(
+//       1,
+//       1,
+//       2,
+//       totalColumns
+//     )
+//     .setFontWeight("bold")
+//     .setVerticalAlignment("middle");
+
+//   output
+//     .getRange(
+//       1,
+//       1,
+//       2,
+//       totalColumns
+//     )
+//     .setBackground("#F3F3F3");
+
+//   output
+//     .getRange(
+//       1,
+//       1,
+//       2,
+//       totalColumns
+//     )
+//     .setHorizontalAlignment("center");
+
+//   // =====================================================
+//   // NUMBER FORMATTING
+//   // =====================================================
+
+//   const dataRows = Math.max(totalRows - 2, 1);
+
+//   // Daily BURN columns
+//   for (let i = 0; i < dates.length; i++) {
+
+//     const burnColumn = 3 + i;
+
+//     output
+//       .getRange(
+//         3,
+//         burnColumn,
+//         dataRows,
+//         1
+//       )
+//       .setNumberFormat("#,##0.000")
+//       .setHorizontalAlignment("right");
+//   }
+
+//   // TOTAL BURN
+//   const totalBurnColumn = totalColumns;
+
+//   output
+//     .getRange(
+//       3,
+//       totalBurnColumn,
+//       dataRows,
+//       1
+//     )
+//     .setNumberFormat("#,##0.000")
+//     .setHorizontalAlignment("right");
+
+//   // =====================================================
+//   // COLUMN WIDTHS
+//   // =====================================================
+
+//   output.setColumnWidth(1, 130);
+//   output.setColumnWidth(2, 180);
+
+//   dates.forEach(function (_, index) {
+
+//     const burnColumn = 3 + index;
+
+//     output.setColumnWidth(
+//       burnColumn,
+//       85
+//     );
+//   });
+
+//   output.setColumnWidth(
+//     totalBurnColumn,
+//     105
+//   );
+
+//   // =====================================================
+//   // ROW HEIGHTS
+//   // =====================================================
+
+//   output.setRowHeight(1, 28);
+//   output.setRowHeight(2, 28);
+
+//   if (totalRows > 2) {
+
+//     output.setRowHeights(
+//       3,
+//       totalRows - 2,
+//       22
+//     );
+//   }
+
+//   // =====================================================
+//   // REMOVE ALL BORDERS
+//   // =====================================================
+
+//   output
+//     .getRange(
+//       1,
+//       1,
+//       totalRows,
+//       totalColumns
+//     )
+//     .setBorder(
+//       false,
+//       false,
+//       false,
+//       false,
+//       false,
+//       false
+//     );
+
+//   // =====================================================
+//   // HEADER BOTTOM BORDER
+//   // =====================================================
+
+//   output
+//     .getRange(
+//       2,
+//       1,
+//       1,
+//       totalColumns
+//     )
+//     .setBorder(
+//       null,
+//       null,
+//       true,
+//       null,
+//       null,
+//       null
+//     );
+
+//   // =====================================================
+//   // VERTICAL SEPARATOR AFTER BRAND
+//   // =====================================================
+
+//   output
+//     .getRange(
+//       1,
+//       2,
+//       totalRows,
+//       1
+//     )
+//     .setBorder(
+//       null,
+//       null,
+//       null,
+//       true,
+//       null,
+//       null
+//     );
+
+//   // =====================================================
+//   // VERTICAL SEPARATOR AFTER EACH DATE
+//   // =====================================================
+
+//   for (let i = 0; i < dates.length; i++) {
+
+//     const burnColumn = 3 + i;
+
+//     output
+//       .getRange(
+//         1,
+//         burnColumn,
+//         totalRows,
+//         1
+//       )
+//       .setBorder(
+//         null,
+//         null,
+//         null,
+//         true,
+//         null,
+//         null
+//       );
+//   }
+
+//   // =====================================================
+//   // SEPARATOR BEFORE TOTAL BURN
+//   // =====================================================
+
+//   output
+//     .getRange(
+//       1,
+//       totalBurnColumn,
+//       totalRows,
+//       1
+//     )
+//     .setBorder(
+//       null,
+//       true,
+//       null,
+//       null,
+//       null,
+//       null
+//     );
+
+//   // =====================================================
+//   // BU COLOUR SHADING
+//   // =====================================================
+
+//   const buColors = [
+//     "#EAF2F8",
+//     "#FCE4EC",
+//     "#E8F5E9",
+//     "#FFF3E0",
+//     "#F3E5F5",
+//     "#E0F7FA",
+//     "#FFFDE7",
+//     "#ECEFF1",
+//     "#FBE9E7",
+//     "#E8EAF6"
+//   ];
+
+//   const subtotalColor = "#D9EAD3";
+//   const platformColor = "#B7B7B7";
+
+//   buBlocks.forEach(function (block, index) {
+
+//     const color =
+//       buColors[index % buColors.length];
+
+//     // Entire BU block
+//     output
+//       .getRange(
+//         block.startRow,
+//         1,
+//         block.endRow - block.startRow + 1,
+//         totalColumns
+//       )
+//       .setBackground(color);
+
+//     // BU name bold
+//     output
+//       .getRange(
+//         block.startRow,
+//         1,
+//         block.endRow - block.startRow + 1,
+//         1
+//       )
+//       .setFontWeight("bold");
+
+//     // ===================================================
+//     // SUBTOTAL ROW
+//     // ===================================================
+
+//     if (block.subtotalRow) {
+
+//       output
+//         .getRange(
+//           block.subtotalRow,
+//           1,
+//           1,
+//           totalColumns
+//         )
+//         .setBackground(subtotalColor)
+//         .setFontWeight("bold");
+
+//       output
+//         .getRange(
+//           block.subtotalRow,
+//           1,
+//           1,
+//           totalColumns
+//         )
+//         .setBorder(
+//           true,
+//           null,
+//           null,
+//           null,
+//           null,
+//           null
+//         );
+//     }
+//   });
+
+//   // =====================================================
+//   // PLATFORM ROW FORMATTING
+//   // =====================================================
+
+//   if (platformRow) {
+
+//     output
+//       .getRange(
+//         platformRow,
+//         1,
+//         1,
+//         totalColumns
+//       )
+//       .setBackground(platformColor)
+//       .setFontWeight("bold");
+
+//     output
+//       .getRange(
+//         platformRow,
+//         1,
+//         1,
+//         totalColumns
+//       )
+//       .setBorder(
+//         true,
+//         null,
+//         true,
+//         null,
+//         null,
+//         null
+//       );
+//   }
+
+//   // =====================================================
+//   // TOTAL BURN COLUMN
+//   // =====================================================
+
+//   output
+//     .getRange(
+//       1,
+//       totalBurnColumn,
+//       totalRows,
+//       1
+//     )
+//     .setFontWeight("bold");
+
+//   // =====================================================
+//   // REAPPLY HEADER BACKGROUND
+//   // =====================================================
+
+//   output
+//     .getRange(
+//       1,
+//       1,
+//       2,
+//       totalColumns
+//     )
+//     .setBackground("#F3F3F3");
+
+//   // =====================================================
+//   // REAPPLY SUBTOTAL COLORS
+//   // =====================================================
+
+//   buBlocks.forEach(function (block) {
+
+//     if (block.subtotalRow) {
+
+//       output
+//         .getRange(
+//           block.subtotalRow,
+//           1,
+//           1,
+//           totalColumns
+//         )
+//         .setBackground(subtotalColor)
+//         .setFontWeight("bold");
+//     }
+//   });
+
+//   // =====================================================
+//   // REAPPLY PLATFORM COLOR
+//   // =====================================================
+
+//   if (platformRow) {
+
+//     output
+//       .getRange(
+//         platformRow,
+//         1,
+//         1,
+//         totalColumns
+//       )
+//       .setBackground(platformColor)
+//       .setFontWeight("bold");
+//   }
+
+//   // =====================================================
+//   // FREEZE
+//   // =====================================================
+
+//   output.setFrozenRows(2);
+//   output.setFrozenColumns(2);
+
+//   // =====================================================
+//   // REMOVE OLD FILTER
+//   // =====================================================
+
+//   if (output.getFilter()) {
+//     output.getFilter().remove();
+//   }
+
+//   // =====================================================
+//   // CREATE FILTER
+//   // =====================================================
+
+//   output
+//     .getRange(
+//       2,
+//       1,
+//       Math.max(totalRows - 1, 1),
+//       totalColumns
+//     )
+//     .createFilter();
+
+//   // =====================================================
+//   // ALIGNMENT
+//   // =====================================================
+
+//   if (totalRows > 2) {
+
+//     output
+//       .getRange(
+//         3,
+//         1,
+//         totalRows - 2,
+//         2
+//       )
+//       .setHorizontalAlignment("left");
+
+//     output
+//       .getRange(
+//         3,
+//         3,
+//         totalRows - 2,
+//         totalColumns - 2
+//       )
+//       .setHorizontalAlignment("right");
+//   }
+
+//   // =====================================================
+//   // FINAL FLUSH
+//   // =====================================================
+
+//   SpreadsheetApp.flush();
+// }
