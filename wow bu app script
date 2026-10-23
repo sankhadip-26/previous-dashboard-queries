@@ -1,0 +1,592 @@
+function BUWOW() {
+  const SOURCE_SHEET = "BRAND WOW";
+  const OUTPUT_SHEET = "BU WOW";
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const source = ss.getSheetByName(SOURCE_SHEET);
+  let output = ss.getSheetByName(OUTPUT_SHEET);
+
+  if (!source) {
+    throw new Error("Source sheet not found: " + SOURCE_SHEET);
+  }
+
+  if (!output) {
+    output = ss.insertSheet(OUTPUT_SHEET);
+  }
+
+  if (output.getFilter()) {
+    output.getFilter().remove();
+  }
+
+  output.clear();
+
+  const data = source.getDataRange().getValues();
+
+  if (data.length < 3) return;
+
+  const sourceTotalColumns = data[0].length;
+  const columnsPerWeek = 4;
+
+  // ---------------------------------------------------------
+  // CREATE HEADERS WITHOUT BRAND COLUMN
+  // ---------------------------------------------------------
+
+  const headerRow1 = [""];
+  const headerRow2 = ["MASTER BU"];
+
+  const numberOfWeeks =
+    Math.floor(
+      (sourceTotalColumns - 2) / columnsPerWeek
+    );
+
+  for (let i = 0; i < numberOfWeeks; i++) {
+    const sourceStartColumn =
+      2 + i * columnsPerWeek;
+
+    // Take date-range header directly from WOW BRAND
+    headerRow1.push(
+      data[0][sourceStartColumn],
+      "",
+      "",
+      ""
+    );
+
+    headerRow2.push(
+      "QTY",
+      "GMV",
+      "QTY WoW %",
+      "GMV WoW %"
+    );
+  }
+
+  const totalColumns = headerRow1.length;
+
+  // ---------------------------------------------------------
+  // TAKE ONLY SUBTOTAL ROWS
+  // ---------------------------------------------------------
+
+  const outputData = [
+    headerRow1,
+    headerRow2
+  ];
+
+  const subtotalRows = [];
+
+  for (let i = 2; i < data.length; i++) {
+    if (
+      String(data[i][1]).trim().toUpperCase() ===
+      "SUBTOTAL"
+    ) {
+      const newRow = [data[i][0]];
+
+      for (let j = 2; j < sourceTotalColumns; j++) {
+        newRow.push(data[i][j]);
+      }
+
+      outputData.push(newRow);
+      subtotalRows.push(newRow);
+    }
+  }
+
+  // ---------------------------------------------------------
+  // TAKE PLATFORM ROW
+  // ---------------------------------------------------------
+
+  const platformRow = data.find(row =>
+    String(row[0]).trim().toUpperCase() ===
+    "PLATFORM"
+  );
+
+  if (platformRow) {
+    const newPlatformRow = [
+      "PLATFORM"
+    ];
+
+    for (let j = 2; j < sourceTotalColumns; j++) {
+      newPlatformRow.push(
+        platformRow[j]
+      );
+    }
+
+    outputData.push(
+      newPlatformRow
+    );
+  }
+
+  // ---------------------------------------------------------
+  // WRITE DATA
+  // ---------------------------------------------------------
+
+  output
+    .getRange(
+      1,
+      1,
+      outputData.length,
+      totalColumns
+    )
+    .setValues(outputData);
+
+  // ---------------------------------------------------------
+  // CALIBRI
+  // ---------------------------------------------------------
+
+  output
+    .getRange(
+      1,
+      1,
+      outputData.length,
+      totalColumns
+    )
+    .setFontFamily("Calibri");
+
+  // ---------------------------------------------------------
+  // HEADER FORMATTING
+  // ---------------------------------------------------------
+
+  output
+    .getRange(
+      1,
+      1,
+      1,
+      totalColumns
+    )
+    .setFontWeight("bold")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+
+  output
+    .getRange(
+      2,
+      1,
+      1,
+      totalColumns
+    )
+    .setFontWeight("bold")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+
+  output
+    .getRange(
+      2,
+      1,
+      1,
+      1
+    )
+    .setBackground("#D9EAF7")
+    .setFontColor("#000000");
+
+  // ---------------------------------------------------------
+  // WEEK HEADER COLORS
+  // ---------------------------------------------------------
+
+  const weekHeaderColors = [
+    "#4472C4",
+    "#548235",
+    "#C55A11",
+    "#7030A0",
+    "#008C95",
+    "#5B5B5B"
+  ];
+
+  for (let i = 0; i < numberOfWeeks; i++) {
+    const startColumn =
+      2 + i * columnsPerWeek;
+
+    output
+      .getRange(
+        1,
+        startColumn,
+        1,
+        columnsPerWeek
+      )
+      .merge();
+
+    output
+      .getRange(
+        1,
+        startColumn,
+        1,
+        columnsPerWeek
+      )
+      .setBackground(
+        weekHeaderColors[
+          i % weekHeaderColors.length
+        ]
+      )
+      .setFontColor("#FFFFFF")
+      .setFontWeight("bold")
+      .setHorizontalAlignment("center")
+      .setVerticalAlignment("middle");
+
+    output
+      .getRange(
+        2,
+        startColumn,
+        1,
+        columnsPerWeek
+      )
+      .setBackground("#D9EAF7")
+      .setFontColor("#000000")
+      .setFontWeight("bold")
+      .setHorizontalAlignment("center")
+      .setVerticalAlignment("middle");
+  }
+
+  // ---------------------------------------------------------
+  // CLEAN HEADER + BUCKET BORDERS
+  // ---------------------------------------------------------
+
+  output
+    .getRange(
+      2,
+      1,
+      1,
+      totalColumns
+    )
+    .setBorder(
+      null,
+      null,
+      true,
+      null,
+      null,
+      null,
+      "#808080",
+      SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+    );
+
+  // Strong separator after MASTER BU
+  output
+    .getRange(
+      1,
+      1,
+      outputData.length,
+      1
+    )
+    .setBorder(
+      null,
+      null,
+      null,
+      true,
+      null,
+      null,
+      "#666666",
+      SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+    );
+
+  // Vertical separators between weekly buckets
+  for (let i = 0; i < numberOfWeeks; i++) {
+
+    const startColumn =
+      2 + i * columnsPerWeek;
+
+    // Before each week
+    output
+      .getRange(
+        1,
+        startColumn,
+        outputData.length,
+        1
+      )
+      .setBorder(
+        null,
+        true,
+        null,
+        null,
+        null,
+        null,
+        "#666666",
+        SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+      );
+
+    // After each week
+    output
+      .getRange(
+        1,
+        startColumn + columnsPerWeek - 1,
+        outputData.length,
+        1
+      )
+      .setBorder(
+        null,
+        null,
+        null,
+        true,
+        null,
+        null,
+        "#666666",
+        SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+      );
+  }
+
+  // ---------------------------------------------------------
+  // BU COLORS
+  // ---------------------------------------------------------
+
+  const buColors = [
+    "#EAF3F8",
+    "#FFF7D6",
+    "#FCEDE7",
+    "#EEEAF5",
+    "#E5F3F4",
+    "#FDEBDD",
+    "#F8E1E1",
+    "#F0E8F8",
+    "#FCE9DD",
+    "#E8ECF5"
+  ];
+
+  for (let i = 0; i < subtotalRows.length; i++) {
+    output
+      .getRange(
+        3 + i,
+        1,
+        1,
+        totalColumns
+      )
+      .setBackground(
+        buColors[
+          i % buColors.length
+        ]
+      )
+      .setFontWeight("bold");
+  }
+
+  // ---------------------------------------------------------
+  // PLATFORM FORMATTING
+  // ---------------------------------------------------------
+
+  if (platformRow) {
+
+    const platformRowNumber =
+      outputData.length;
+
+    output
+      .getRange(
+        platformRowNumber,
+        1,
+        1,
+        totalColumns
+      )
+      .setBackground("#D9D2E9")
+      .setFontWeight("bold")
+      .setBorder(
+        true,
+        null,
+        true,
+        null,
+        null,
+        null,
+        "#8064A2",
+        SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+      );
+  }
+
+  // ---------------------------------------------------------
+  // NUMBER FORMATTING
+  // ---------------------------------------------------------
+
+  for (let i = 0; i < numberOfWeeks; i++) {
+
+    const startColumn =
+      2 + i * columnsPerWeek;
+
+    output
+      .getRange(
+        3,
+        startColumn,
+        outputData.length - 2,
+        1
+      )
+      .setNumberFormat("#,##0");
+
+    output
+      .getRange(
+        3,
+        startColumn + 1,
+        outputData.length - 2,
+        1
+      )
+      .setNumberFormat("#,##0.00");
+
+    output
+      .getRange(
+        3,
+        startColumn + 2,
+        outputData.length - 2,
+        1
+      )
+      .setNumberFormat("0.0%");
+
+    output
+      .getRange(
+        3,
+        startColumn + 3,
+        outputData.length - 2,
+        1
+      )
+      .setNumberFormat("0.0%");
+  }
+
+  // ---------------------------------------------------------
+  // CONDITIONAL FORMATTING
+  // < 0%       = RED
+  // 0% - 10%   = YELLOW
+  // > 10%      = GREEN
+  // ---------------------------------------------------------
+
+  const conditionalRules = [];
+
+  for (let i = 0; i < numberOfWeeks; i++) {
+
+    const startColumn =
+      2 + i * columnsPerWeek;
+
+    const range = output.getRange(
+      3,
+      startColumn + 2,
+      outputData.length - 2,
+      2
+    );
+
+    conditionalRules.push(
+
+      SpreadsheetApp
+        .newConditionalFormatRule()
+        .whenNumberLessThan(0)
+        .setBackground("#F4CCCC")
+        .setFontColor("#9C0006")
+        .setRanges([range])
+        .build(),
+
+      SpreadsheetApp
+        .newConditionalFormatRule()
+        .whenNumberBetween(0, 0.10)
+        .setBackground("#FFF2CC")
+        .setFontColor("#9C6500")
+        .setRanges([range])
+        .build(),
+
+      SpreadsheetApp
+        .newConditionalFormatRule()
+        .whenNumberGreaterThan(0.10)
+        .setBackground("#D9EAD3")
+        .setFontColor("#006100")
+        .setRanges([range])
+        .build()
+    );
+  }
+
+  output.setConditionalFormatRules(
+    conditionalRules
+  );
+
+  // ---------------------------------------------------------
+  // ALIGNMENT
+  // ---------------------------------------------------------
+
+  output
+    .getRange(
+      3,
+      2,
+      Math.max(
+        outputData.length - 2,
+        1
+      ),
+      totalColumns - 1
+    )
+    .setHorizontalAlignment("center");
+
+  output
+    .getRange(
+      3,
+      1,
+      Math.max(
+        outputData.length - 2,
+        1
+      ),
+      1
+    )
+    .setHorizontalAlignment("left");
+
+  // ---------------------------------------------------------
+  // FREEZE
+  // ---------------------------------------------------------
+
+  output.setFrozenRows(2);
+  output.setFrozenColumns(1);
+
+  // ---------------------------------------------------------
+  // COLUMN WIDTHS
+  // ---------------------------------------------------------
+
+  output.setColumnWidth(
+    1,
+    150
+  );
+
+  for (let i = 0; i < numberOfWeeks; i++) {
+
+    const startColumn =
+      2 + i * columnsPerWeek;
+
+    output.setColumnWidth(
+      startColumn,
+      85
+    );
+
+    output.setColumnWidth(
+      startColumn + 1,
+      90
+    );
+
+    output.setColumnWidth(
+      startColumn + 2,
+      105
+    );
+
+    output.setColumnWidth(
+      startColumn + 3,
+      110
+    );
+  }
+
+  // ---------------------------------------------------------
+  // ROW HEIGHTS
+  // ---------------------------------------------------------
+
+  output.setRowHeight(
+    1,
+    30
+  );
+
+  output.setRowHeight(
+    2,
+    25
+  );
+
+  // ---------------------------------------------------------
+  // FILTER
+  // ---------------------------------------------------------
+
+  if (outputData.length > 2) {
+    output
+      .getRange(
+        2,
+        1,
+        outputData.length - 1,
+        totalColumns
+      )
+      .createFilter();
+  }
+
+  // ---------------------------------------------------------
+  // HIDE FIRST PREVIOUS-MONTH COMPARISON WEEK
+  // ---------------------------------------------------------
+
+  if (numberOfWeeks > 0) {
+    output.hideColumns(
+      2,
+      columnsPerWeek
+    );
+  }
+}
