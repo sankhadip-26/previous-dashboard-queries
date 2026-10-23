@@ -1,0 +1,527 @@
+function BuSubcatWise() {
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("BU SUBCAT WISE");
+
+  if (!sheet) return;
+
+  const sheetLastRow = sheet.getLastRow();
+
+  if (sheetLastRow < 3) return;
+
+  const lastCol = 14; // A:N
+
+  // =========================================================
+  // FIND ACTUAL LAST DATA ROW
+  // =========================================================
+
+  const allData = sheet
+    .getRange(3, 1, sheetLastRow - 2, lastCol)
+    .getValues();
+
+  let lastRow = 2;
+
+  for (let i = allData.length - 1; i >= 0; i--) {
+
+    const hasData = allData[i].some(cell =>
+      cell !== "" && cell !== null
+    );
+
+    if (hasData) {
+      lastRow = i + 3;
+      break;
+    }
+  }
+
+  if (lastRow < 3) return;
+
+
+  // =========================================================
+  // COLUMN STRUCTURE
+  // =========================================================
+  //
+  // A = MASTER BU
+  // B = SUBCAT
+  // C = MTD GMV
+  // D = LM MTD GMV
+  // E = LM GMV
+  // F = MTD GMV GROWTH %
+  // G = MTD QTY
+  // H = LM MTD QTY
+  // I = LM QTY
+  // J = MTD QTY GROWTH %
+  // K = ASP TM
+  // L = ASP LM
+  // M = AVG TD% TM
+  // N = AVG TD% LM
+  //
+  // ROW 1 AND ROW 2 ARE NOT TOUCHED.
+  // =========================================================
+
+
+  // =========================================================
+  // BU COLOURS
+  // =========================================================
+
+  const buColors = {
+    "JEWELLERY": "#D9EAF7",
+    "LTA": "#E2F0D9",
+    "FOOTWEAR": "#FCE4D6",
+    "HOME": "#E4DFEC",
+    "ETHNIC": "#F9E2C3",
+    "WESTERN": "#DDEBF7",
+    "BEAUTY": "#EADCF8",
+    "OTHERS": "#E7E6E6"
+  };
+
+
+  // =========================================================
+  // DATA RANGE
+  // =========================================================
+
+  const dataRange = sheet.getRange(
+    3,
+    1,
+    lastRow - 2,
+    lastCol
+  );
+
+
+  // =========================================================
+  // RESET ALL OLD FORMATTING
+  // =========================================================
+  //
+  // This ensures old records and newly inserted records
+  // receive exactly the same formatting every time.
+  //
+  // =========================================================
+
+  dataRange.clearFormat();
+
+
+  // =========================================================
+  // GENERAL DATA FORMATTING
+  // =========================================================
+
+  dataRange
+    .setFontFamily("Calibri")
+    .setFontSize(10)
+    .setVerticalAlignment("middle");
+
+
+  // =========================================================
+  // NUMBER FORMATS
+  // =========================================================
+
+  // C:E = GMV
+  sheet.getRange(3, 3, lastRow - 2, 3)
+    .setNumberFormat("0.00");
+
+  // F = GMV Growth
+  sheet.getRange(3, 6, lastRow - 2, 1)
+    .setNumberFormat("0.00%");
+
+  // G:I = Quantity
+  sheet.getRange(3, 7, lastRow - 2, 3)
+    .setNumberFormat("#,##0");
+
+  // J = Quantity Growth
+  sheet.getRange(3, 10, lastRow - 2, 1)
+    .setNumberFormat("0.00%");
+
+  // K:L = ASP TM / ASP LM
+  sheet.getRange(3, 11, lastRow - 2, 2)
+    .setNumberFormat("#,##0");
+
+  // M:N = AVG TD% TM / AVG TD% LM
+  sheet.getRange(3, 13, lastRow - 2, 2)
+    .setNumberFormat("0");
+
+
+  // =========================================================
+  // ALIGNMENT
+  // =========================================================
+
+  sheet.getRange(3, 1, lastRow - 2, 2)
+    .setHorizontalAlignment("left");
+
+  sheet.getRange(3, 3, lastRow - 2, 12)
+    .setHorizontalAlignment("right");
+
+
+  // =========================================================
+  // GENERAL BOTTOM BORDERS
+  // =========================================================
+
+  dataRange.setBorder(
+    null,
+    null,
+    true,
+    null,
+    null,
+    null,
+    "#D9D9D9",
+    SpreadsheetApp.BorderStyle.SOLID
+  );
+
+
+  // =========================================================
+  // STRONG VERTICAL BOUNDARIES
+  // =========================================================
+  //
+  // B | GMV | QTY | ASP | TD
+  //
+  // After B
+  // After F
+  // After J
+  // After L
+  // After N
+  //
+  // =========================================================
+
+  // After B
+  sheet.getRange(3, 2, lastRow - 2, 1)
+    .setBorder(
+      null,
+      null,
+      null,
+      true,
+      null,
+      null,
+      "#808080",
+      SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+    );
+
+
+  // After F = GMV
+  sheet.getRange(3, 6, lastRow - 2, 1)
+    .setBorder(
+      null,
+      null,
+      null,
+      true,
+      null,
+      null,
+      "#808080",
+      SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+    );
+
+
+  // After J = QTY
+  sheet.getRange(3, 10, lastRow - 2, 1)
+    .setBorder(
+      null,
+      null,
+      null,
+      true,
+      null,
+      null,
+      "#808080",
+      SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+    );
+
+
+  // After L = ASP
+  sheet.getRange(3, 12, lastRow - 2, 1)
+    .setBorder(
+      null,
+      null,
+      null,
+      true,
+      null,
+      null,
+      "#808080",
+      SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+    );
+
+
+  // After N = AVG TD%
+  sheet.getRange(3, 14, lastRow - 2, 1)
+    .setBorder(
+      null,
+      null,
+      null,
+      true,
+      null,
+      null,
+      "#808080",
+      SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+    );
+
+
+  // =========================================================
+  // READ BU AND SUBCAT
+  // =========================================================
+
+  const values = sheet
+    .getRange(3, 1, lastRow - 2, 2)
+    .getValues();
+
+
+  // =========================================================
+  // FORMAT EACH DATA ROW
+  // =========================================================
+
+  for (let i = 0; i < values.length; i++) {
+
+    const row = i + 3;
+
+    const bu = String(values[i][0] || "")
+      .trim()
+      .toUpperCase();
+
+    const subcat = String(values[i][1] || "")
+      .trim()
+      .toUpperCase();
+
+
+    // =======================================================
+    // GRAND TOTAL
+    // =======================================================
+
+    if (
+      bu === "" ||
+      bu === "GRAND TOTAL" ||
+      subcat === "GRAND TOTAL"
+    ) {
+
+      sheet.getRange(row, 1, 1, lastCol)
+        .setBackground("#9EADCC")
+        .setFontWeight("bold")
+        .setFontSize(11)
+        .setBorder(
+          true,
+          true,
+          true,
+          true,
+          null,
+          null,
+          "#555555",
+          SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+        );
+
+      continue;
+    }
+
+
+    // =======================================================
+    // BU SUBTOTAL
+    // =======================================================
+
+    if (subcat === "SUBTOTAL") {
+
+      sheet.getRange(row, 1, 1, lastCol)
+        .setBackground("#B7B7B7")
+        .setFontWeight("bold")
+        .setFontSize(10);
+
+      sheet.getRange(row, 1, 1, lastCol)
+        .setBorder(
+          true,
+          null,
+          true,
+          null,
+          null,
+          null,
+          "#666666",
+          SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+        );
+
+      continue;
+    }
+
+
+    // =======================================================
+    // NORMAL BU ROW
+    // =======================================================
+
+    const buColor =
+      buColors[bu] || "#E7E6E6";
+
+    sheet.getRange(row, 1, 1, lastCol)
+      .setBackground(buColor);
+
+  }
+
+
+  // =========================================================
+  // CONDITIONAL FORMATTING
+  //
+  // F = GMV GROWTH
+  // J = QTY GROWTH
+  // =========================================================
+
+  const rules =
+    sheet.getConditionalFormatRules();
+
+
+  // Remove old rules affecting F or J
+  const newRules = rules.filter(rule => {
+
+    const ranges = rule.getRanges();
+
+    return !ranges.some(r => {
+
+      const startCol = r.getColumn();
+
+      const endCol =
+        startCol + r.getNumColumns() - 1;
+
+      return (
+        (startCol <= 6 && endCol >= 6) ||
+        (startCol <= 10 && endCol >= 10)
+      );
+
+    });
+
+  });
+
+
+  // =========================================================
+  // NEGATIVE GROWTH
+  // =========================================================
+
+  const negativeF =
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberLessThan(0)
+      .setBackground("#F4CCCC")
+      .setFontColor("#9C0006")
+      .setRanges([
+        sheet.getRange(3, 6, lastRow - 2, 1)
+      ])
+      .build();
+
+
+  const negativeJ =
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberLessThan(0)
+      .setBackground("#F4CCCC")
+      .setFontColor("#9C0006")
+      .setRanges([
+        sheet.getRange(3, 10, lastRow - 2, 1)
+      ])
+      .build();
+
+
+  // =========================================================
+  // 0% TO 10% GROWTH
+  // =========================================================
+
+  const midF =
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberBetween(0, 0.10)
+      .setBackground("#FFF2CC")
+      .setFontColor("#7F6000")
+      .setRanges([
+        sheet.getRange(3, 6, lastRow - 2, 1)
+      ])
+      .build();
+
+
+  const midJ =
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberBetween(0, 0.10)
+      .setBackground("#FFF2CC")
+      .setFontColor("#7F6000")
+      .setRanges([
+        sheet.getRange(3, 10, lastRow - 2, 1)
+      ])
+      .build();
+
+
+  // =========================================================
+  // ABOVE 10% GROWTH
+  // =========================================================
+
+  const positiveF =
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberGreaterThan(0.10)
+      .setBackground("#D9EAD3")
+      .setFontColor("#274E13")
+      .setRanges([
+        sheet.getRange(3, 6, lastRow - 2, 1)
+      ])
+      .build();
+
+
+  const positiveJ =
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberGreaterThan(0.10)
+      .setBackground("#D9EAD3")
+      .setFontColor("#274E13")
+      .setRanges([
+        sheet.getRange(3, 10, lastRow - 2, 1)
+      ])
+      .build();
+
+
+  newRules.push(
+    negativeF,
+    midF,
+    positiveF,
+    negativeJ,
+    midJ,
+    positiveJ
+  );
+
+
+  sheet.setConditionalFormatRules(newRules);
+
+
+  // =========================================================
+  // COLUMN WIDTHS
+  // =========================================================
+
+  sheet.setColumnWidth(1, 120);  // MASTER BU
+  sheet.setColumnWidth(2, 180);  // SUBCAT
+
+  sheet.setColumnWidth(3, 95);   // MTD GMV
+  sheet.setColumnWidth(4, 105);  // LM MTD GMV
+  sheet.setColumnWidth(5, 95);   // LM GMV
+  sheet.setColumnWidth(6, 120);  // GMV GROWTH
+
+  sheet.setColumnWidth(7, 90);   // MTD QTY
+  sheet.setColumnWidth(8, 100);  // LM MTD QTY
+  sheet.setColumnWidth(9, 90);   // LM QTY
+  sheet.setColumnWidth(10, 120); // QTY GROWTH
+
+  sheet.setColumnWidth(11, 90);  // ASP TM
+  sheet.setColumnWidth(12, 90);  // ASP LM
+  sheet.setColumnWidth(13, 100); // AVG TD% TM
+  sheet.setColumnWidth(14, 100); // AVG TD% LM
+
+
+  // =========================================================
+  // FREEZE ROWS
+  // =========================================================
+
+  sheet.setFrozenRows(2);
+
+
+  // =========================================================
+  // REMOVE ALL FORMATTING AFTER DATA ENDS
+  // =========================================================
+
+  const maxRows = sheet.getMaxRows();
+
+  if (lastRow < maxRows) {
+    sheet.getRange(
+      lastRow + 1,
+      1,
+      maxRows - lastRow,
+      14
+    ).clearFormat();
+  }
+
+
+  // =========================================================
+  // ROW 1 AND ROW 2
+  // =========================================================
+  //
+  // NOTHING IS DONE HERE.
+  //
+  // Existing headers, merges, borders, colours,
+  // font sizes, row heights, etc. remain exactly as they are.
+  // =========================================================
+
+}
