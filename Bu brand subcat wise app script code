@@ -1,0 +1,1312 @@
+function BuBrandSubcatWise() {
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("BU BRAND SUBCAT WISE");
+
+  if (!sheet) {
+    throw new Error("Sheet 'DASHBOARD' not found.");
+  }
+
+  const startRow = 3;
+  const lastCol = 15;
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow < startRow) return;
+
+  const numRows = lastRow - startRow + 1;
+
+
+  // =========================================================
+  // 1. MASTER BU COLOURS
+  // =========================================================
+
+  const buColors = {
+    "JEWELLERY": "#D9EAF7",
+    "LTA": "#E2F0D9",
+    "FOOTWEAR": "#FCE4D6",
+    "HOME": "#E4DFEC",
+    "ETHNIC": "#F9E2C3",
+    "WESTERN": "#DDEBF7",
+    "BEAUTY": "#EADCF8",
+    "OTHERS": "#E7E6E6"
+  };
+
+
+  // =========================================================
+  // 2. BRAND COLOURS
+  // =========================================================
+
+  const brandColors = [
+    "#E8DCCB",
+    "#DCCEDB",
+    "#D9E4D2",
+    "#E7D8C9",
+    "#D8D0C1",
+    "#E3D5E8",
+    "#D6DDD5",
+    "#E6D9CC",
+    "#D9D2C3",
+    "#DED6CE",
+    "#D8E0D4",
+    "#E2D7D0"
+  ];
+
+
+  // =========================================================
+  // 3. SUBTOTAL COLOURS
+  // =========================================================
+
+  const subtotalColors = {
+    brandSubtotal: "#D9D9D9",
+    buSubtotal: "#B7B7B7",
+    grandTotal: "#9EADCC"
+  };
+
+
+  // =========================================================
+  // 4. KPI HEADER COLOURS
+  // =========================================================
+
+  const kpiColors = {
+    gmv: "#B4C7E7",
+    qty: "#C6E0B4",
+    asp: "#F4B183",
+    td: "#D9C2E9",
+    growth: "#FFD966"
+  };
+
+
+  // =========================================================
+  // 5. REMOVE MERGING FROM A:C
+  // =========================================================
+
+  sheet
+    .getRange(startRow, 1, numRows, 3)
+    .breakApart();
+
+
+  // =========================================================
+  // 6. BASIC FONT
+  // =========================================================
+
+  sheet
+    .getRange(1, 1, lastRow, lastCol)
+    .setFontFamily("Calibri")
+    .setFontSize(10)
+    .setVerticalAlignment("middle");
+
+
+  // =========================================================
+  // 7. HEADER ROW 1
+  // =========================================================
+
+  sheet
+    .getRange(1, 1, 1, lastCol)
+    .setFontWeight("bold")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+
+  sheet.getRange("A1:C1")
+    .setBackground("#EDEDED");
+
+  // GMV D:G
+  sheet.getRange("D1:G1")
+    .setBackground(kpiColors.gmv);
+
+  // QTY H:K
+  sheet.getRange("H1:K1")
+    .setBackground(kpiColors.qty);
+
+  // ASP L:M
+  sheet.getRange("L1:M1")
+    .setBackground(kpiColors.asp);
+
+  // TD N:O
+  sheet.getRange("N1:O1")
+    .setBackground(kpiColors.td);
+
+
+  // =========================================================
+  // 8. HEADER ROW 2
+  // =========================================================
+
+  sheet
+    .getRange(2, 1, 1, lastCol)
+    .setFontWeight("bold")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle")
+    .setBorder(
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+    );
+
+  sheet.getRange("A2:C2")
+    .setBackground("#EDEDED");
+
+  // GMV D:F
+  sheet.getRange("D2:F2")
+    .setBackground(kpiColors.gmv);
+
+  // GMV Growth G
+  sheet.getRange("G2")
+    .setBackground(kpiColors.growth);
+
+  // QTY H:J
+  sheet.getRange("H2:J2")
+    .setBackground(kpiColors.qty);
+
+  // QTY Growth K
+  sheet.getRange("K2")
+    .setBackground(kpiColors.growth);
+
+  // ASP L:M
+  sheet.getRange("L2:M2")
+    .setBackground(kpiColors.asp);
+
+  // TD N:O
+  sheet.getRange("N2:O2")
+    .setBackground(kpiColors.td);
+
+
+  // =========================================================
+  // 9. DATA ALIGNMENT
+  // =========================================================
+
+  sheet
+    .getRange(startRow, 1, numRows, 3)
+    .setHorizontalAlignment("left");
+
+  sheet
+    .getRange(startRow, 4, numRows, 12)
+    .setHorizontalAlignment("right");
+
+
+  // =========================================================
+  // 10. READ DASHBOARD
+  // =========================================================
+
+  const data = sheet
+    .getRange(startRow, 1, numRows, lastCol)
+    .getValues();
+
+  let rows = [];
+
+  for (let i = 0; i < data.length; i++) {
+
+    const rowNumber = startRow + i;
+
+    const masterBU =
+      String(data[i][0] ?? "")
+        .trim()
+        .toUpperCase();
+
+    const brand =
+      String(data[i][1] ?? "")
+        .trim();
+
+    const subcat =
+      String(data[i][2] ?? "")
+        .trim();
+
+
+    const isBrandSubtotal =
+      subcat.toUpperCase() === "SUBTOTAL" &&
+      brand !== "" &&
+      masterBU !== "";
+
+
+    const isMasterBUSubtotal =
+      brand.toUpperCase() === "SUBTOTAL" &&
+      masterBU !== "";
+
+
+    const isGrandTotal =
+      masterBU === "" &&
+      brand.toUpperCase() === "SUBTOTAL";
+
+
+    rows.push({
+      row: rowNumber,
+      masterBU: masterBU,
+      brand: brand,
+      subcat: subcat,
+      isBrandSubtotal: isBrandSubtotal,
+      isMasterBUSubtotal: isMasterBUSubtotal,
+      isGrandTotal: isGrandTotal
+    });
+  }
+
+
+  // =========================================================
+  // 11. RESET DATA FORMATTING
+  // =========================================================
+
+  sheet
+    .getRange(startRow, 1, numRows, lastCol)
+    .setBackground("#FFFFFF")
+    .setFontWeight("normal")
+    .setFontSize(10)
+    .setBorder(
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    );
+
+
+  // =========================================================
+  // 12. FIND MASTER BU BLOCKS
+  // =========================================================
+
+  let buBlocks = [];
+
+  let currentBU = null;
+  let buStartRow = null;
+
+  for (let i = 0; i < rows.length; i++) {
+
+    const r = rows[i];
+
+    if (r.isGrandTotal) continue;
+
+    if (
+      r.masterBU !== "" &&
+      r.masterBU !== currentBU
+    ) {
+
+      if (currentBU !== null) {
+
+        buBlocks.push({
+          masterBU: currentBU,
+          startRow: buStartRow,
+          endRow: r.row - 1
+        });
+      }
+
+      currentBU = r.masterBU;
+      buStartRow = r.row;
+    }
+  }
+
+
+  if (
+    currentBU !== null &&
+    buStartRow !== null
+  ) {
+
+    buBlocks.push({
+      masterBU: currentBU,
+      startRow: buStartRow,
+      endRow: lastRow
+    });
+  }
+
+
+  // =========================================================
+  // 13. APPLY MASTER BU COLOUR
+  // =========================================================
+
+  buBlocks.forEach(function(block) {
+
+    const buColor =
+      buColors[block.masterBU] ||
+      buColors["OTHERS"];
+
+
+    // ONLY COLUMN A
+
+    sheet
+      .getRange(
+        block.startRow,
+        1,
+        block.endRow - block.startRow + 1,
+        1
+      )
+      .setBackground(buColor)
+      .setFontWeight("bold")
+      .setHorizontalAlignment("center");
+
+
+    // Outer boundary around BU block
+
+    sheet
+      .getRange(
+        block.startRow,
+        1,
+        block.endRow - block.startRow + 1,
+        lastCol
+      )
+      .setBorder(
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        null,
+        SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+      );
+  });
+
+
+  // =========================================================
+  // 14. FIND BRAND BLOCKS
+  // =========================================================
+
+  let brandBlocks = [];
+
+  let currentBrand = null;
+  let currentBrandBU = null;
+  let brandStartRow = null;
+
+
+  for (let i = 0; i < rows.length; i++) {
+
+    const r = rows[i];
+
+
+    if (
+      r.isBrandSubtotal ||
+      r.isMasterBUSubtotal ||
+      r.isGrandTotal
+    ) {
+      continue;
+    }
+
+
+    if (r.brand === "") continue;
+
+
+    if (
+      r.brand !== currentBrand ||
+      r.masterBU !== currentBrandBU
+    ) {
+
+      if (
+        currentBrand !== null &&
+        brandStartRow !== null
+      ) {
+
+        brandBlocks.push({
+          brand: currentBrand,
+          masterBU: currentBrandBU,
+          startRow: brandStartRow,
+          endRow: r.row - 1
+        });
+      }
+
+
+      currentBrand = r.brand;
+      currentBrandBU = r.masterBU;
+      brandStartRow = r.row;
+    }
+  }
+
+
+  if (
+    currentBrand !== null &&
+    brandStartRow !== null
+  ) {
+
+    brandBlocks.push({
+      brand: currentBrand,
+      masterBU: currentBrandBU,
+      startRow: brandStartRow,
+      endRow: lastRow
+    });
+  }
+
+
+  // =========================================================
+  // 15. APPLY BRAND COLOUR
+  // =========================================================
+  //
+  // Brand colour applies ONLY to B:O.
+  // Column A keeps the MASTER BU colour.
+  //
+  // =========================================================
+
+  let brandCountByBU = {};
+
+
+  brandBlocks.forEach(function(block) {
+
+    if (!brandCountByBU[block.masterBU]) {
+      brandCountByBU[block.masterBU] = 0;
+    }
+
+
+    const brandIndex =
+      brandCountByBU[block.masterBU];
+
+
+    const brandColor =
+      brandColors[
+        brandIndex % brandColors.length
+      ];
+
+
+    brandCountByBU[block.masterBU]++;
+
+
+    // B:O
+
+    sheet
+      .getRange(
+        block.startRow,
+        2,
+        block.endRow - block.startRow + 1,
+        14
+      )
+      .setBackground(brandColor);
+
+
+    // Bottom border between brands
+
+    sheet
+      .getRange(
+        block.startRow,
+        2,
+        block.endRow - block.startRow + 1,
+        14
+      )
+      .setBorder(
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        null,
+        SpreadsheetApp.BorderStyle.SOLID
+      );
+
+
+    // Brand name bold
+
+    sheet
+      .getRange(
+        block.startRow,
+        2,
+        block.endRow - block.startRow + 1,
+        1
+      )
+      .setFontWeight("bold");
+  });
+
+
+  // =========================================================
+  // 16. BRAND SUBTOTAL
+  // =========================================================
+
+  rows.forEach(function(r) {
+
+    if (!r.isBrandSubtotal) return;
+
+
+    // B:O subtotal
+
+    sheet
+      .getRange(r.row, 2, 1, 14)
+      .setBackground(subtotalColors.brandSubtotal)
+      .setFontWeight("bold")
+      .setBorder(
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        null,
+        SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+      );
+
+
+    // A keeps BU colour
+
+    const buColor =
+      buColors[r.masterBU] ||
+      buColors["OTHERS"];
+
+
+    sheet
+      .getRange(r.row, 1)
+      .setBackground(buColor)
+      .setFontWeight("bold");
+
+
+    sheet
+      .getRange(r.row, 1, 1, 3)
+      .setFontWeight("bold");
+  });
+
+
+  // =========================================================
+  // 17. MASTER BU SUBTOTAL
+  // =========================================================
+
+  rows.forEach(function(r) {
+
+    if (!r.isMasterBUSubtotal) return;
+
+
+    // B:O
+
+    sheet
+      .getRange(r.row, 2, 1, 14)
+      .setBackground(subtotalColors.buSubtotal)
+      .setFontWeight("bold")
+      .setBorder(
+        true,
+        false,
+        true,
+        false,
+        false,
+        false,
+        null,
+        SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+      );
+
+
+    // A keeps BU colour
+
+    const buColor =
+      buColors[r.masterBU] ||
+      buColors["OTHERS"];
+
+
+    sheet
+      .getRange(r.row, 1)
+      .setBackground(buColor)
+      .setFontWeight("bold");
+
+
+    sheet
+      .getRange(r.row, 1, 1, 15)
+      .setFontWeight("bold");
+  });
+
+
+  // =========================================================
+  // 18. GRAND TOTAL
+  // =========================================================
+
+  rows.forEach(function(r) {
+
+    if (!r.isGrandTotal) return;
+
+
+    sheet
+      .getRange(r.row, 1, 1, lastCol)
+      .setBackground(subtotalColors.grandTotal)
+      .setFontWeight("bold")
+      .setFontSize(11)
+      .setBorder(
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        null,
+        SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+      );
+  });
+
+
+  // =========================================================
+  // 18A. KPI COLUMN BOUNDARIES
+  // =========================================================
+  //
+  // KPI columns:
+  //
+  // D | E | F | G | H | I | J | K | L | M | N | O
+  //
+  // Strong boundaries:
+  //
+  // G = end of GMV + Growth
+  // K = end of QTY + Growth
+  // M = end of ASP
+  // O = end of TD
+  //
+  // =========================================================
+
+
+  // ---------------------------------------------------------
+  // Thin vertical boundary between every KPI column
+  // ---------------------------------------------------------
+
+  sheet
+    .getRange(startRow, 4, numRows, 12)
+    .setBorder(
+      null,
+      null,
+      null,
+      null,
+      true,
+      null,
+      "#9E9E9E",
+      SpreadsheetApp.BorderStyle.SOLID
+    );
+
+
+  // ---------------------------------------------------------
+  // Strong boundary after GMV / GROWTH (G)
+  // ---------------------------------------------------------
+
+  sheet
+    .getRange(startRow, 7, numRows, 1)
+    .setBorder(
+      null,
+      null,
+      null,
+      true,
+      null,
+      null,
+      "#555555",
+      SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+    );
+
+
+  // ---------------------------------------------------------
+  // Strong boundary after QTY / GROWTH (K)
+  // ---------------------------------------------------------
+
+  sheet
+    .getRange(startRow, 11, numRows, 1)
+    .setBorder(
+      null,
+      null,
+      null,
+      true,
+      null,
+      null,
+      "#555555",
+      SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+    );
+
+
+  // ---------------------------------------------------------
+  // Strong boundary after ASP (M)
+  // ---------------------------------------------------------
+
+  sheet
+    .getRange(startRow, 13, numRows, 1)
+    .setBorder(
+      null,
+      null,
+      null,
+      true,
+      null,
+      null,
+      "#555555",
+      SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+    );
+
+
+  // ---------------------------------------------------------
+  // Strong boundary after TD (O)
+  // ---------------------------------------------------------
+
+  sheet
+    .getRange(startRow, 15, numRows, 1)
+    .setBorder(
+      null,
+      null,
+      null,
+      true,
+      null,
+      null,
+      "#555555",
+      SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+    );
+
+
+  // =========================================================
+  // 19. NUMBER FORMATS
+  // =========================================================
+
+  // GMV D:F
+
+  sheet
+    .getRange(startRow, 4, numRows, 3)
+    .setNumberFormat("0.00");
+
+
+  // MTD Growth G
+
+  sheet
+    .getRange(startRow, 7, numRows, 1)
+    .setNumberFormat("0.00%");
+
+
+  // QTY H:J
+
+  sheet
+    .getRange(startRow, 8, numRows, 3)
+    .setNumberFormat("#,##0");
+
+
+  // Growth K
+
+  sheet
+    .getRange(startRow, 11, numRows, 1)
+    .setNumberFormat("0.00%");
+
+
+  // ASP L:M
+
+  sheet
+    .getRange(startRow, 12, numRows, 2)
+    .setNumberFormat("#,##0");
+
+
+  // AVG TD N:O
+
+  sheet
+    .getRange(startRow, 14, numRows, 2)
+    .setNumberFormat("0");
+
+
+  // =========================================================
+  // 20. CONDITIONAL FORMATTING
+  // =========================================================
+  //
+  // G and K:
+  //
+  // < 0%       = Light Red
+  // 0% - 10%   = Light Yellow
+  // > 10%      = Light Green
+  //
+  // =========================================================
+
+
+  const growthMtdRange =
+    sheet.getRange(
+      startRow,
+      7,
+      numRows,
+      1
+    );
+
+
+  const growthRange =
+    sheet.getRange(
+      startRow,
+      11,
+      numRows,
+      1
+    );
+
+
+  // Get existing rules
+
+  let existingRules =
+    sheet.getConditionalFormatRules();
+
+
+  // Remove existing rules affecting G or K
+
+  existingRules =
+    existingRules.filter(function(rule) {
+
+      const ranges =
+        rule.getRanges();
+
+
+      return !ranges.some(function(range) {
+
+        const col =
+          range.getColumn();
+
+        const lastRuleCol =
+          col +
+          range.getNumColumns() -
+          1;
+
+
+        const overlapsG =
+          col <= 7 &&
+          lastRuleCol >= 7;
+
+
+        const overlapsK =
+          col <= 11 &&
+          lastRuleCol >= 11;
+
+
+        return overlapsG || overlapsK;
+      });
+    });
+
+
+  // ---------------------------------------------------------
+  // G - RED
+  // ---------------------------------------------------------
+
+  const redRuleG =
+    SpreadsheetApp
+      .newConditionalFormatRule()
+      .whenNumberLessThan(0)
+      .setBackground("#F4CCCC")
+      .setFontColor("#9C0006")
+      .setRanges([growthMtdRange])
+      .build();
+
+
+  // ---------------------------------------------------------
+  // G - YELLOW
+  // ---------------------------------------------------------
+
+  const yellowRuleG =
+    SpreadsheetApp
+      .newConditionalFormatRule()
+      .whenNumberBetween(0, 0.10)
+      .setBackground("#FFF2CC")
+      .setFontColor("#7F6000")
+      .setRanges([growthMtdRange])
+      .build();
+
+
+  // ---------------------------------------------------------
+  // G - GREEN
+  // ---------------------------------------------------------
+
+  const greenRuleG =
+    SpreadsheetApp
+      .newConditionalFormatRule()
+      .whenNumberGreaterThan(0.10)
+      .setBackground("#D9EAD3")
+      .setFontColor("#274E13")
+      .setRanges([growthMtdRange])
+      .build();
+
+
+  // ---------------------------------------------------------
+  // K - RED
+  // ---------------------------------------------------------
+
+  const redRuleK =
+    SpreadsheetApp
+      .newConditionalFormatRule()
+      .whenNumberLessThan(0)
+      .setBackground("#F4CCCC")
+      .setFontColor("#9C0006")
+      .setRanges([growthRange])
+      .build();
+
+
+  // ---------------------------------------------------------
+  // K - YELLOW
+  // ---------------------------------------------------------
+
+  const yellowRuleK =
+    SpreadsheetApp
+      .newConditionalFormatRule()
+      .whenNumberBetween(0, 0.10)
+      .setBackground("#FFF2CC")
+      .setFontColor("#7F6000")
+      .setRanges([growthRange])
+      .build();
+
+
+  // ---------------------------------------------------------
+  // K - GREEN
+  // ---------------------------------------------------------
+
+  const greenRuleK =
+    SpreadsheetApp
+      .newConditionalFormatRule()
+      .whenNumberGreaterThan(0.10)
+      .setBackground("#D9EAD3")
+      .setFontColor("#274E13")
+      .setRanges([growthRange])
+      .build();
+
+
+  existingRules.push(
+    redRuleG,
+    yellowRuleG,
+    greenRuleG,
+    redRuleK,
+    yellowRuleK,
+    greenRuleK
+  );
+
+
+  sheet.setConditionalFormatRules(
+    existingRules
+  );
+
+
+  // =========================================================
+  // 21. COLUMN WIDTHS
+  // =========================================================
+
+  sheet.setColumnWidth(1, 120);
+  sheet.setColumnWidth(2, 150);
+  sheet.setColumnWidth(3, 170);
+
+  sheet.setColumnWidth(4, 90);
+  sheet.setColumnWidth(5, 100);
+  sheet.setColumnWidth(6, 100);
+  sheet.setColumnWidth(7, 100);
+
+  sheet.setColumnWidth(8, 90);
+  sheet.setColumnWidth(9, 100);
+  sheet.setColumnWidth(10, 100);
+  sheet.setColumnWidth(11, 90);
+
+  sheet.setColumnWidth(12, 90);
+  sheet.setColumnWidth(13, 90);
+
+  sheet.setColumnWidth(14, 100);
+  sheet.setColumnWidth(15, 100);
+
+
+  // =========================================================
+  // 22. ROW HEIGHTS
+  // =========================================================
+
+  sheet.setRowHeight(1, 28);
+  sheet.setRowHeight(2, 30);
+
+  sheet
+    .getRange(2, 1, 1, lastCol)
+    .setBorder(
+      null,
+      null,
+      true,
+      null,
+      null,
+      null,
+      "#555555",
+      SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+    );
+
+
+  // =========================================================
+  // 23. FREEZE HEADER
+  // =========================================================
+
+  sheet.setFrozenRows(2);
+}
+
+
+// function createBrandBurnReport() {
+
+//   const SOURCE_SHEET = "BRAND_WISE_BURN";
+//   const OUTPUT_SHEET = "BRAND WISE BURN";
+
+//   const ss = SpreadsheetApp.getActiveSpreadsheet();
+//   const source = ss.getSheetByName(SOURCE_SHEET);
+//   let output = ss.getSheetByName(OUTPUT_SHEET);
+
+//   if (!source) {
+//     throw new Error("Source sheet not found: " + SOURCE_SHEET);
+//   }
+
+//   if (!output) {
+//     output = ss.insertSheet(OUTPUT_SHEET);
+//   }
+
+//   if (output.getFilter()) {
+//     output.getFilter().remove();
+//   }
+
+//   output.clear();
+
+//   const data = source.getDataRange().getValues();
+
+//   if (data.length < 2) return;
+
+//   const totalColumns = data[0].length;
+
+//   // ---------------------------------------------------------
+//   // WRITE DATA
+//   // ---------------------------------------------------------
+
+//   output
+//     .getRange(
+//       1,
+//       1,
+//       data.length,
+//       totalColumns
+//     )
+//     .setValues(data);
+
+//   // ---------------------------------------------------------
+//   // CALIBRI
+//   // ---------------------------------------------------------
+
+//   output
+//     .getRange(
+//       1,
+//       1,
+//       data.length,
+//       totalColumns
+//     )
+//     .setFontFamily("Calibri");
+
+//   // ---------------------------------------------------------
+//   // HEADER FORMATTING
+//   // ---------------------------------------------------------
+
+//   output
+//     .getRange(
+//       1,
+//       1,
+//       1,
+//       totalColumns
+//     )
+//     .setBackground("#4472C4")
+//     .setFontColor("#FFFFFF")
+//     .setFontWeight("bold")
+//     .setHorizontalAlignment("center")
+//     .setVerticalAlignment("middle");
+
+//   // ---------------------------------------------------------
+//   // CLEAN HEADER BORDER
+//   // ---------------------------------------------------------
+
+//   output
+//     .getRange(
+//       1,
+//       1,
+//       1,
+//       totalColumns
+//     )
+//     .setBorder(
+//       null,
+//       null,
+//       true,
+//       null,
+//       null,
+//       null,
+//       "#666666",
+//       SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+//     );
+
+//   // ---------------------------------------------------------
+//   // BU COLORS
+//   // ---------------------------------------------------------
+
+//   const buColors = [
+//     "#EAF3F8",
+//     "#FFF7D6",
+//     "#FCEDE7",
+//     "#EEEAF5",
+//     "#E5F3F4",
+//     "#FDEBDD",
+//     "#F8E1E1",
+//     "#F0E8F8",
+//     "#FCE9DD",
+//     "#E8ECF5"
+//   ];
+
+//   let buColorIndex = 0;
+//   let previousBU = "";
+
+//   // ---------------------------------------------------------
+//   // FORMAT DATA ROWS
+//   // ---------------------------------------------------------
+
+//   for (let i = 1; i < data.length; i++) {
+
+//     const rowNumber = i + 1;
+
+//     const bu = String(data[i][0]).trim();
+//     const brand = String(data[i][1]).trim();
+
+//     // PLATFORM
+//     if (bu.toUpperCase() === "PLATFORM") {
+
+//       output
+//         .getRange(
+//           rowNumber,
+//           1,
+//           1,
+//           totalColumns
+//         )
+//         .setBackground("#D9D2E9")
+//         .setFontWeight("bold")
+//         .setBorder(
+//           true,
+//           null,
+//           true,
+//           null,
+//           null,
+//           null,
+//           "#8064A2",
+//           SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+//         );
+
+//       continue;
+//     }
+
+//     // SUBTOTAL
+//     if (brand.toUpperCase() === "SUBTOTAL") {
+
+//       output
+//         .getRange(
+//           rowNumber,
+//           1,
+//           1,
+//           totalColumns
+//         )
+//         .setBackground("#D9EAD3")
+//         .setFontWeight("bold");
+
+//       continue;
+//     }
+
+//     // NEW BU
+//     if (bu !== previousBU) {
+
+//       output
+//         .getRange(
+//           rowNumber,
+//           1,
+//           1,
+//           totalColumns
+//         )
+//         .setBackground(
+//           buColors[
+//             buColorIndex % buColors.length
+//           ]
+//         );
+
+//       buColorIndex++;
+
+//       previousBU = bu;
+
+//     } else {
+
+//       // Same BU - keep same light shade
+//       output
+//         .getRange(
+//           rowNumber,
+//           1,
+//           1,
+//           totalColumns
+//         )
+//         .setBackground(
+//           buColors[
+//             (buColorIndex - 1) % buColors.length
+//           ]
+//         );
+//     }
+//   }
+
+//   // ---------------------------------------------------------
+//   // BOLD MASTER BU
+//   // ---------------------------------------------------------
+
+//   output
+//     .getRange(
+//       2,
+//       1,
+//       data.length - 1,
+//       1
+//     )
+//     .setFontWeight("bold");
+
+//   // ---------------------------------------------------------
+//   // BURN NUMBER FORMAT
+//   // ---------------------------------------------------------
+
+//   if (data.length > 1 && totalColumns >= 3) {
+
+//     output
+//       .getRange(
+//         2,
+//         3,
+//         data.length - 1,
+//         1
+//       )
+//       .setNumberFormat("#,##0.00")
+//       .setHorizontalAlignment("center");
+//   }
+
+//   // ---------------------------------------------------------
+//   // ALIGNMENT
+//   // ---------------------------------------------------------
+
+//   output
+//     .getRange(
+//       2,
+//       1,
+//       Math.max(data.length - 1, 1),
+//       2
+//     )
+//     .setHorizontalAlignment("left");
+
+//   // ---------------------------------------------------------
+//   // VERTICAL SEPARATOR AFTER BRAND
+//   // ---------------------------------------------------------
+
+//   output
+//     .getRange(
+//       1,
+//       2,
+//       data.length,
+//       1
+//     )
+//     .setBorder(
+//       null,
+//       null,
+//       null,
+//       true,
+//       null,
+//       null,
+//       "#666666",
+//       SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+//     );
+
+//   // ---------------------------------------------------------
+//   // COLUMN WIDTHS
+//   // ---------------------------------------------------------
+
+//   output.setColumnWidth(1, 150);
+//   output.setColumnWidth(2, 180);
+//   output.setColumnWidth(3, 110);
+
+//   // ---------------------------------------------------------
+//   // ROW HEIGHT
+//   // ---------------------------------------------------------
+
+//   output.setRowHeight(1, 30);
+
+//   // ---------------------------------------------------------
+//   // FREEZE
+//   // ---------------------------------------------------------
+
+//   output.setFrozenRows(1);
+//   output.setFrozenColumns(2);
+
+//   // ---------------------------------------------------------
+//   // FILTER
+//   // ---------------------------------------------------------
+
+//   if (data.length > 1) {
+
+//     output
+//       .getRange(
+//         1,
+//         1,
+//         data.length,
+//         totalColumns
+//       )
+//       .createFilter();
+//   }
+// }
+
+
