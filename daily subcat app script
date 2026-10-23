@@ -1,0 +1,785 @@
+function DAILYSUBCAT() {
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  const SOURCE_SHEET = "SUBCAT QUERY";
+  const OUTPUT_SHEET = "DAILY SUBCAT";
+
+  const source = ss.getSheetByName(SOURCE_SHEET);
+
+  if (!source) {
+    throw new Error("Source sheet '" + SOURCE_SHEET + "' not found.");
+  }
+
+  let output = ss.getSheetByName(OUTPUT_SHEET);
+
+  if (!output) {
+    output = ss.insertSheet(OUTPUT_SHEET);
+  }
+
+  // =====================================================
+  // READ SOURCE DATA
+  // =====================================================
+
+  const sourceData = source.getDataRange().getValues();
+
+  if (sourceData.length < 2) {
+    output.clear();
+    return;
+  }
+
+  const headers = sourceData[0];
+
+  const dateIndex = headers.indexOf("DATE");
+  const buIndex = headers.indexOf("MASTER BU");
+  const subcatIndex = headers.indexOf("SUBCAT");
+  const qtyIndex = headers.indexOf("QTY");
+  const gmvIndex = headers.indexOf("GMV");
+  const totalQtyIndex = headers.indexOf("TOTAL_QTY");
+  const totalGmvIndex = headers.indexOf("TOTAL_GMV");
+  const rowTypeIndex = headers.indexOf("ROW_TYPE");
+
+  if (
+    dateIndex === -1 ||
+    buIndex === -1 ||
+    subcatIndex === -1 ||
+    qtyIndex === -1 ||
+    gmvIndex === -1 ||
+    totalQtyIndex === -1 ||
+    totalGmvIndex === -1 ||
+    rowTypeIndex === -1
+  ) {
+    throw new Error(
+      "Required columns not found. Required: DATE, MASTER BU, SUBCAT, QTY, GMV, TOTAL_QTY, TOTAL_GMV, ROW_TYPE"
+    );
+  }
+
+  // =====================================================
+  // PREPARE DATA
+  // =====================================================
+
+  const subcatData = {};
+  const subtotalData = {};
+
+  const dateSet = new Set();
+  const buOrder = [];
+  const buSeen = new Set();
+  // =====================================================
+  // CURRENT MONTH DATE RANGE
+  // =====================================================
+
+  const today = new Date();
+
+  const currentMonthStart = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    1
+  );
+
+  const currentMonthKey = Utilities.formatDate(
+    currentMonthStart,
+    Session.getScriptTimeZone(),
+    "yyyy-MM"
+  );
+
+  for (let i = 1; i < sourceData.length; i++) {
+
+    const row = sourceData[i];
+
+    let date = row[dateIndex];
+    const bu = row[buIndex];
+    const subcat = row[subcatIndex];
+    const rowType = row[rowTypeIndex];
+
+    if (!bu || !date) continue;
+
+    // Normalize date
+    if (!(date instanceof Date)) {
+      date = new Date(date);
+    }
+
+    if (isNaN(date.getTime())) continue;
+
+    // const dateKey = Utilities.formatDate(
+    //   date,
+    //   Session.getScriptTimeZone(),
+    //   "yyyy-MM-dd"
+    // );
+
+    // dateSet.add(dateKey);
+      const dateKey = Utilities.formatDate(
+      date,
+      Session.getScriptTimeZone(),
+      "yyyy-MM-dd"
+    );
+
+    // Only current month data
+    if (dateKey.substring(0, 7) !== currentMonthKey) continue;
+
+    dateSet.add(dateKey);
+
+    // Keep BU order from source
+    if (!buSeen.has(bu)) {
+      buSeen.add(bu);
+      buOrder.push(bu);
+    }
+
+    // ===================================================
+    // SUBCATEGORY ROW
+    // ===================================================
+
+    if (rowType === "SUBCAT") {
+
+      if (!subcatData[bu]) {
+        subcatData[bu] = {};
+      }
+
+      if (!subcatData[bu][subcat]) {
+        subcatData[bu][subcat] = {
+          dates: {},
+          totalQty: 0,
+          totalGmv: 0
+        };
+      }
+
+      const qty = Number(row[qtyIndex]) || 0;
+      const gmv = Number(row[gmvIndex]) || 0;
+
+      subcatData[bu][subcat].dates[dateKey] = {
+        qty: qty,
+        gmv: gmv
+      };
+
+      // Total values are repeated for every date in SQL,
+      // so take them from the row.
+      // subcatData[bu][subcat].totalQty =
+      //   Number(row[totalQtyIndex]) || 0;
+
+      // subcatData[bu][subcat].totalGmv =
+      //   Number(row[totalGmvIndex]) || 0;
+            // Total values are calculated only from current-month
+      // daily data, so previous-month data is excluded.
+      subcatData[bu][subcat].totalQty += qty;
+      subcatData[bu][subcat].totalGmv += gmv;
+    }
+
+    // ===================================================
+    // BU SUBTOTAL ROW
+    // ===================================================
+
+    if (rowType === "BU_SUBTOTAL") {
+
+      if (!subtotalData[bu]) {
+        subtotalData[bu] = {
+          dates: {},
+          totalQty: 0,
+          totalGmv: 0
+        };
+      }
+
+      subtotalData[bu].dates[dateKey] = {
+        qty: Number(row[qtyIndex]) || 0,
+        gmv: Number(row[gmvIndex]) || 0
+      };
+
+            // Total values are calculated only from current-month
+      // daily subtotal data.
+      subtotalData[bu].totalQty +=
+        Number(row[qtyIndex]) || 0;
+
+      subtotalData[bu].totalGmv +=
+        Number(row[gmvIndex]) || 0;
+      // subtotalData[bu].totalQty =
+      //   Number(row[totalQtyIndex]) || 0;
+
+      // subtotalData[bu].totalGmv =
+      //   Number(row[totalGmvIndex]) || 0;
+    }
+  }
+
+  // =====================================================
+  // SORT DATES
+  // =====================================================
+
+  // const dates = Array.from(dateSet).sort();
+  const dates = Array.from(dateSet).sort().reverse();
+
+  // =====================================================
+  // CLEAR OUTPUT
+  // =====================================================
+
+  output.clear();
+
+  // Remove existing merged cells
+  output
+    .getRange(
+      1,
+      1,
+      Math.max(output.getMaxRows(), 2),
+      Math.max(output.getMaxColumns(), 2)
+    )
+    .breakApart();
+
+  // =====================================================
+  // COLUMN STRUCTURE
+  // =====================================================
+
+  // First 2 columns:
+  // A = MASTER BU
+  // B = SUBCAT
+  //
+  // Every date = 2 columns
+  // QTY + GMV
+  //
+  // Last 2:
+  // TOTAL QTY
+  // TOTAL GMV
+
+  const totalColumns = 2 + (dates.length * 2) + 2;
+
+  // =====================================================
+  // COUNT REQUIRED ROWS
+  // =====================================================
+
+  let totalRows = 2;
+
+  buOrder.forEach(function (bu) {
+
+    const subcats = subcatData[bu]
+      ? Object.keys(subcatData[bu])
+      : [];
+
+    totalRows += subcats.length;
+
+    // One subtotal row per BU
+    if (subtotalData[bu]) {
+      totalRows += 1;
+    }
+  });
+
+  // =====================================================
+  // AUTO EXPAND SHEET
+  // =====================================================
+
+  if (output.getMaxRows() < totalRows) {
+    output.insertRowsAfter(
+      output.getMaxRows(),
+      totalRows - output.getMaxRows()
+    );
+  }
+
+  if (output.getMaxColumns() < totalColumns) {
+    output.insertColumnsAfter(
+      output.getMaxColumns(),
+      totalColumns - output.getMaxColumns()
+    );
+  }
+
+  // =====================================================
+  // ROW 1
+  // =====================================================
+
+  output
+    .getRange(1, 1)
+    .setValue("");
+
+  output
+    .getRange(1, 2)
+    .setValue("");
+
+  // =====================================================
+  // ROW 2 HEADERS
+  // =====================================================
+
+  const headerRow = [
+    "MASTER BU",
+    "SUBCAT"
+  ];
+
+  dates.forEach(function () {
+    headerRow.push("QTY");
+    headerRow.push("GMV");
+  });
+
+  headerRow.push("TOTAL QTY");
+  headerRow.push("TOTAL GMV");
+
+  output
+    .getRange(2, 1, 1, headerRow.length)
+    .setValues([headerRow]);
+
+  // =====================================================
+  // DATE HEADERS - ROW 1
+  // =====================================================
+
+  dates.forEach(function (dateKey, index) {
+
+    const startColumn = 3 + (index * 2);
+
+    const date = new Date(dateKey + "T00:00:00");
+
+    output
+      .getRange(1, startColumn, 1, 2)
+      .merge();
+
+    output
+      .getRange(1, startColumn)
+      .setValue(date)
+      .setNumberFormat("dd-mmm-yyyy")
+      .setHorizontalAlignment("center")
+      .setVerticalAlignment("middle")
+      .setFontWeight("bold");
+  });
+
+  // =====================================================
+  // DATA ROWS
+  // =====================================================
+
+  let currentRow = 3;
+
+  // Keep track of BU blocks
+  const buBlocks = [];
+
+  buOrder.forEach(function (bu) {
+
+    const blockStartRow = currentRow;
+
+    // const subcats = subcatData[bu]
+    //   ? Object.keys(subcatData[bu]).sort()
+    //   : [];
+    const subcats = subcatData[bu]
+  ? Object.keys(subcatData[bu]).sort(function (a, b) {
+      return (
+        (subcatData[bu][b].totalGmv || 0) -
+        (subcatData[bu][a].totalGmv || 0)
+      );
+    })
+  : [];
+
+    // ===================================================
+    // SUBCATEGORY ROWS
+    // ===================================================
+
+    subcats.forEach(function (subcat) {
+
+      const item = subcatData[bu][subcat];
+
+      const rowOutput = [
+        bu,
+        subcat
+      ];
+
+      // Daily data
+      dates.forEach(function (dateKey) {
+
+        const day = item.dates[dateKey];
+
+        if (day) {
+          rowOutput.push(day.qty);
+          rowOutput.push(day.gmv);
+        } else {
+          rowOutput.push("");
+          rowOutput.push("");
+        }
+      });
+
+      // Right-side totals
+      rowOutput.push(item.totalQty);
+      rowOutput.push(item.totalGmv);
+
+      output
+        .getRange(currentRow, 1, 1, rowOutput.length)
+        .setValues([rowOutput]);
+
+      currentRow++;
+    });
+
+    // ===================================================
+    // BU SUBTOTAL ROW
+    // ===================================================
+
+    if (subtotalData[bu]) {
+
+      const subtotal = subtotalData[bu];
+
+      const subtotalRow = [
+        bu,
+        "SUBTOTAL"
+      ];
+
+      dates.forEach(function (dateKey) {
+
+        const day = subtotal.dates[dateKey];
+
+        if (day) {
+          subtotalRow.push(day.qty);
+          subtotalRow.push(day.gmv);
+        } else {
+          subtotalRow.push("");
+          subtotalRow.push("");
+        }
+      });
+
+      subtotalRow.push(subtotal.totalQty);
+      subtotalRow.push(subtotal.totalGmv);
+
+      output
+        .getRange(currentRow, 1, 1, subtotalRow.length)
+        .setValues([subtotalRow]);
+
+      currentRow++;
+    }
+
+    const blockEndRow = currentRow - 1;
+
+    buBlocks.push({
+      bu: bu,
+      startRow: blockStartRow,
+      endRow: blockEndRow,
+      subtotalRow: subtotalData[bu]
+        ? blockEndRow
+        : null
+    });
+  });
+
+  // =====================================================
+  // BASIC FORMATTING
+  // =====================================================
+
+  output
+    .getRange(1, 1, totalRows, totalColumns)
+    .setFontFamily("Calibri")
+    .setFontSize(10)
+    .setVerticalAlignment("middle");
+
+  // =====================================================
+  // HEADER FORMATTING
+  // =====================================================
+
+  output
+    .getRange(1, 1, 2, totalColumns)
+    .setFontWeight("bold")
+    .setVerticalAlignment("middle");
+
+  output
+    .getRange(2, 1, 1, totalColumns)
+    .setHorizontalAlignment("center");
+
+  output
+    .getRange(1, 1, 1, totalColumns)
+    .setHorizontalAlignment("center");
+
+  // =====================================================
+  // NUMBER FORMATTING
+  // =====================================================
+
+  // QTY columns
+  for (let i = 0; i < dates.length; i++) {
+
+    const qtyColumn = 3 + (i * 2);
+    const gmvColumn = qtyColumn + 1;
+
+    output
+      .getRange(3, qtyColumn, Math.max(totalRows - 2, 1), 1)
+      .setNumberFormat("#,##0")
+      .setHorizontalAlignment("right");
+
+    output
+      .getRange(3, gmvColumn, Math.max(totalRows - 2, 1), 1)
+      .setNumberFormat("#,##0.00")
+      .setHorizontalAlignment("right");
+  }
+
+  // Total QTY
+  const totalQtyColumn = totalColumns - 1;
+
+  // Total GMV
+  const totalGmvColumn = totalColumns;
+
+  output
+    .getRange(3, totalQtyColumn, Math.max(totalRows - 2, 1), 1)
+    .setNumberFormat("#,##0")
+    .setHorizontalAlignment("right");
+
+  output
+    .getRange(3, totalGmvColumn, Math.max(totalRows - 2, 1), 1)
+    .setNumberFormat("#,##0.00")
+    .setHorizontalAlignment("right");
+
+  // =====================================================
+  // COLUMN WIDTHS
+  // =====================================================
+
+  output.setColumnWidth(1, 130);
+  output.setColumnWidth(2, 180);
+
+  dates.forEach(function (_, index) {
+
+    const qtyColumn = 3 + (index * 2);
+    const gmvColumn = qtyColumn + 1;
+
+    output.setColumnWidth(qtyColumn, 75);
+    output.setColumnWidth(gmvColumn, 85);
+  });
+
+  output.setColumnWidth(totalQtyColumn, 95);
+  output.setColumnWidth(totalGmvColumn, 105);
+
+  // =====================================================
+  // ROW HEIGHTS
+  // =====================================================
+
+  output.setRowHeight(1, 28);
+  output.setRowHeight(2, 28);
+
+  if (totalRows > 2) {
+    output.setRowHeights(3, totalRows - 2, 22);
+  }
+
+  // =====================================================
+  // CLEAN BORDERS
+  // =====================================================
+
+  // Remove all borders first
+  output
+    .getRange(1, 1, totalRows, totalColumns)
+    .setBorder(
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    );
+
+  // Bottom border under Row 2
+  output
+    .getRange(2, 1, 1, totalColumns)
+    .setBorder(
+      null,
+      null,
+      true,
+      null,
+      null,
+      null
+    );
+
+  // Vertical separator after SUBCAT
+  output
+    .getRange(1, 2, totalRows, 1)
+    .setBorder(
+      null,
+      null,
+      null,
+      true,
+      null,
+      null
+    );
+
+  // Vertical separator after every GMV/date group
+  for (let i = 0; i < dates.length; i++) {
+
+    const gmvColumn = 4 + (i * 2);
+
+    output
+      .getRange(1, gmvColumn, totalRows, 1)
+      .setBorder(
+        null,
+        null,
+        null,
+        true,
+        null,
+        null
+      );
+  }
+
+  // Separator before TOTAL section
+  output
+    .getRange(1, totalQtyColumn, totalRows, 1)
+    .setBorder(
+      null,
+      true,
+      null,
+      null,
+      null,
+      null
+    );
+
+  // =====================================================
+  // BU COLOUR SHADING
+  // =====================================================
+
+  const buColors = [
+    "#EAF2F8",
+    "#FCE4EC",
+    "#E8F5E9",
+    "#FFF3E0",
+    "#F3E5F5",
+    "#E0F7FA",
+    "#FFFDE7",
+    "#ECEFF1",
+    "#FBE9E7",
+    "#E8EAF6"
+  ];
+
+  const subtotalColor = "#D9EAD3";
+
+  buBlocks.forEach(function (block, index) {
+
+    const color = buColors[index % buColors.length];
+
+    // Entire BU block
+    output
+      .getRange(
+        block.startRow,
+        1,
+        block.endRow - block.startRow + 1,
+        totalColumns
+      )
+      .setBackground(color);
+
+    // BU name bold
+    output
+      .getRange(
+        block.startRow,
+        1,
+        block.endRow - block.startRow + 1,
+        1
+      )
+      .setFontWeight("bold");
+
+    // ===================================================
+    // SUBTOTAL HIGHLIGHT
+    // ===================================================
+
+    if (block.subtotalRow) {
+
+      output
+        .getRange(
+          block.subtotalRow,
+          1,
+          1,
+          totalColumns
+        )
+        .setBackground(subtotalColor)
+        .setFontWeight("bold");
+
+      // Slightly stronger top border for subtotal
+      output
+        .getRange(
+          block.subtotalRow,
+          1,
+          1,
+          totalColumns
+        )
+        .setBorder(
+          true,
+          null,
+          null,
+          null,
+          null,
+          null
+        );
+    }
+  });
+
+  // =====================================================
+  // TOTAL COLUMNS HIGHLIGHT
+  // =====================================================
+
+  output
+    .getRange(
+      1,
+      totalQtyColumn,
+      totalRows,
+      2
+    )
+    .setFontWeight("bold");
+
+  // =====================================================
+  // HEADER BACKGROUND
+  // =====================================================
+
+  output
+    .getRange(1, 1, 2, totalColumns)
+    .setBackground("#F3F3F3");
+
+  // Reapply subtotal highlighting after header formatting
+  buBlocks.forEach(function (block) {
+
+    if (block.subtotalRow) {
+
+      output
+        .getRange(
+          block.subtotalRow,
+          1,
+          1,
+          totalColumns
+        )
+        .setBackground(subtotalColor)
+        .setFontWeight("bold");
+    }
+  });
+
+  // =====================================================
+  // FREEZE
+  // =====================================================
+
+  output.setFrozenRows(2);
+  output.setFrozenColumns(2);
+
+  // =====================================================
+  // REMOVE OLD FILTER IF ANY
+  // =====================================================
+
+  if (output.getFilter()) {
+    output.getFilter().remove();
+  }
+
+  // =====================================================
+  // CREATE FILTER ON ROW 2
+  // =====================================================
+
+  output
+    .getRange(
+      2,
+      1,
+      Math.max(totalRows - 1, 1),
+      totalColumns
+    )
+    .createFilter();
+
+  // =====================================================
+  // ALIGNMENT
+  // =====================================================
+
+  output
+    .getRange(3, 1, Math.max(totalRows - 2, 1), 2)
+    .setHorizontalAlignment("left");
+
+  // Numeric columns right aligned
+  output
+    .getRange(
+      3,
+      3,
+      Math.max(totalRows - 2, 1),
+      totalColumns - 2
+    )
+    .setHorizontalAlignment("right");
+
+  // =====================================================
+  // DATE HEADERS CENTERED
+  // =====================================================
+
+  output
+    .getRange(1, 3, 1, dates.length * 2)
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle")
+    .setFontWeight("bold");
+
+  // =====================================================
+  // FINAL FLUSH
+  // =====================================================
+
+  SpreadsheetApp.flush();
+}
