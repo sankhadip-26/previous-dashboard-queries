@@ -1,0 +1,1045 @@
+function SUBCATWOW() {
+  const SOURCE_SHEET = "SUBCAT QUERY";
+  const OUTPUT_SHEET = "SUBCAT WOW";
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const source = ss.getSheetByName(SOURCE_SHEET);
+  let output = ss.getSheetByName(OUTPUT_SHEET);
+
+  if (!source) throw new Error("Source sheet not found: " + SOURCE_SHEET);
+  if (!output) output = ss.insertSheet(OUTPUT_SHEET);
+
+  if (output.getFilter()) output.getFilter().remove();
+  output.clear();
+
+  const data = source.getDataRange().getValues();
+  if (data.length < 2) return;
+
+  const headers = data[0];
+
+  const dateCol = headers.indexOf("DATE");
+  const buCol = headers.indexOf("MASTER BU");
+  const subcatCol = headers.indexOf("SUBCAT");
+  const qtyCol = headers.indexOf("QTY");
+  const gmvCol = headers.indexOf("GMV");
+  const rowTypeCol = headers.indexOf("ROW_TYPE");
+
+  if (
+    dateCol === -1 ||
+    buCol === -1 ||
+    subcatCol === -1 ||
+    qtyCol === -1 ||
+    gmvCol === -1 ||
+    rowTypeCol === -1
+  ) {
+    throw new Error("Required columns are missing in SUBCAT QUERY.");
+  }
+
+  const dates = [];
+
+  for (let i = 1; i < data.length; i++) {
+    const rawDate = data[i][dateCol];
+    if (!rawDate) continue;
+
+    const date = new Date(rawDate);
+
+    if (!isNaN(date.getTime())) {
+      date.setHours(0, 0, 0, 0);
+      dates.push(date);
+    }
+  }
+
+  if (dates.length === 0) return;
+
+  dates.sort((a, b) => a - b);
+
+  // =========================================================
+  // REPORTING MONTH
+  // Use latest date so hidden comparison week does not
+  // incorrectly become the reporting month.
+  // =========================================================
+
+  const reportDate = dates[dates.length - 1];
+
+  const year = reportDate.getFullYear();
+  const month = reportDate.getMonth();
+
+  const monthStart = new Date(year, month, 1);
+  monthStart.setHours(0, 0, 0, 0);
+
+  // =========================================================
+  // FIND MONDAY OF THE REPORTING MONTH'S WEEK
+  // =========================================================
+
+  const monthStartDay = monthStart.getDay();
+
+  const daysBackToMonday =
+    monthStartDay === 0
+      ? 6
+      : monthStartDay - 1;
+
+  const firstVisibleWeekStart = new Date(monthStart);
+  firstVisibleWeekStart.setDate(
+    monthStart.getDate() - daysBackToMonday
+  );
+  firstVisibleWeekStart.setHours(0, 0, 0, 0);
+
+  // Previous Monday-Sunday comparison week
+  const hiddenWeekStart = new Date(firstVisibleWeekStart);
+  hiddenWeekStart.setDate(
+    hiddenWeekStart.getDate() - 7
+  );
+  hiddenWeekStart.setHours(0, 0, 0, 0);
+
+  // =========================================================
+  // CREATE MONDAY-SUNDAY WEEK BUCKETS
+  // =========================================================
+
+  const weekBuckets = [];
+
+  let bucketStart = new Date(hiddenWeekStart);
+
+  while (bucketStart <= reportDate) {
+    const start = new Date(bucketStart);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+
+    weekBuckets.push({
+      start: start,
+      end: end
+    });
+
+    bucketStart = new Date(start);
+    bucketStart.setDate(bucketStart.getDate() + 7);
+  }
+
+  // =========================================================
+  // KEEP ONLY WEEKS HAVING DATA
+  // =========================================================
+
+  const availableWeekIndexes = [];
+
+  weekBuckets.forEach((bucket, index) => {
+    const hasData = dates.some(date =>
+      date >= bucket.start &&
+      date <= bucket.end
+    );
+
+    if (hasData) {
+      availableWeekIndexes.push(index);
+    }
+  });
+
+  if (availableWeekIndexes.length === 0) return;
+
+  const columnsPerWeek = 4;
+
+  const totalColumns =
+    2 +
+    availableWeekIndexes.length * columnsPerWeek;
+
+  // =========================================================
+  // HEADERS
+  // =========================================================
+
+  const headerRow1 = ["", ""];
+  const headerRow2 = ["MASTER BU", "SUBCAT"];
+
+  availableWeekIndexes.forEach((weekIndex, displayIndex) => {
+    const bucket = weekBuckets[weekIndex];
+
+    const startText = Utilities.formatDate(
+      bucket.start,
+      Session.getScriptTimeZone(),
+      "dd-MMM"
+    );
+
+    const endText = Utilities.formatDate(
+      bucket.end,
+      Session.getScriptTimeZone(),
+      "dd-MMM"
+    );
+
+  headerRow1.push(
+  "(" +
+    startText +
+    " - " +
+    endText +
+    ")",
+  "",
+  "",
+  ""
+);
+
+    headerRow2.push(
+      "QTY",
+      "GMV",
+      "QTY WoW %",
+      "GMV WoW %"
+    );
+  });
+
+  // =========================================================
+  // DATA
+  // =========================================================
+
+  const subcatData = {};
+  const subtotalData = {};
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+
+    const rawDate = row[dateCol];
+
+    if (!rawDate) continue;
+
+    const date = new Date(rawDate);
+
+    if (isNaN(date.getTime())) continue;
+
+    date.setHours(0, 0, 0, 0);
+
+    // Find actual Monday-Sunday bucket
+    const weekIndex = weekBuckets.findIndex(bucket =>
+      date >= bucket.start &&
+      date <= bucket.end
+    );
+
+    if (weekIndex === -1) continue;
+
+    const bu = row[buCol];
+    const subcat = row[subcatCol];
+    const rowType = row[rowTypeCol];
+
+    const qty = Number(row[qtyCol]) || 0;
+    const gmv = Number(row[gmvCol]) || 0;
+
+    if (rowType === "SUBCAT") {
+      const key = bu + "||" + subcat;
+
+      if (!subcatData[key]) {
+        subcatData[key] = {
+          bu: bu,
+          subcat: subcat,
+          weeks: {}
+        };
+      }
+
+      if (!subcatData[key].weeks[weekIndex]) {
+        subcatData[key].weeks[weekIndex] = {
+          qty: 0,
+          gmv: 0
+        };
+      }
+
+      subcatData[key].weeks[weekIndex].qty += qty;
+      subcatData[key].weeks[weekIndex].gmv += gmv;
+    }
+
+    if (rowType === "BU_SUBTOTAL") {
+      if (!subtotalData[bu]) {
+        subtotalData[bu] = {
+          bu: bu,
+          weeks: {}
+        };
+      }
+
+      if (!subtotalData[bu].weeks[weekIndex]) {
+        subtotalData[bu].weeks[weekIndex] = {
+          qty: 0,
+          gmv: 0
+        };
+      }
+
+      subtotalData[bu].weeks[weekIndex].qty += qty;
+      subtotalData[bu].weeks[weekIndex].gmv += gmv;
+    }
+  }
+
+  // =========================================================
+  // BU GROUPING
+  // =========================================================
+
+  const buGroups = {};
+
+  Object.keys(subcatData).forEach(key => {
+    const item = subcatData[key];
+
+    if (!buGroups[item.bu]) {
+      buGroups[item.bu] = [];
+    }
+
+    buGroups[item.bu].push(item);
+  });
+
+  const bus = Object.keys(buGroups).sort();
+
+  bus.forEach(bu => {
+    buGroups[bu].sort((a, b) =>
+      String(a.subcat).localeCompare(
+        String(b.subcat)
+      )
+    );
+  });
+
+  // =========================================================
+  // OUTPUT DATA
+  // =========================================================
+
+  const outputData = [];
+
+  outputData.push(headerRow1);
+  outputData.push(headerRow2);
+
+  const subtotalRows = [];
+
+  const platformWeeks = {};
+
+  availableWeekIndexes.forEach(weekIndex => {
+    platformWeeks[weekIndex] = {
+      qty: 0,
+      gmv: 0
+    };
+  });
+
+  bus.forEach(bu => {
+    const items = buGroups[bu];
+
+    items.forEach(item => {
+      const outputRow = [
+        item.bu,
+        item.subcat
+      ];
+
+      availableWeekIndexes.forEach(weekIndex => {
+        const current =
+          item.weeks[weekIndex] || {
+            qty: 0,
+            gmv: 0
+          };
+
+        const currentPosition =
+          availableWeekIndexes.indexOf(
+            weekIndex
+          );
+
+        const previousWeekIndex =
+          availableWeekIndexes[
+            currentPosition - 1
+          ];
+
+        let previousQty = 0;
+        let previousGmv = 0;
+
+        if (
+          previousWeekIndex !== undefined &&
+          item.weeks[previousWeekIndex]
+        ) {
+          previousQty =
+            item.weeks[previousWeekIndex].qty;
+
+          previousGmv =
+            item.weeks[previousWeekIndex].gmv;
+        }
+
+        const qtyWow =
+          previousQty === 0
+            ? ""
+            : (current.qty - previousQty) /
+              previousQty;
+
+        const gmvWow =
+          previousGmv === 0
+            ? ""
+            : (current.gmv - previousGmv) /
+              previousGmv;
+
+        outputRow.push(
+          current.qty,
+          current.gmv,
+          qtyWow,
+          gmvWow
+        );
+      });
+
+      outputData.push(outputRow);
+    });
+
+    // =====================================================
+    // SUBTOTAL
+    // =====================================================
+
+    const subtotalRow = [
+      bu,
+      "SUBTOTAL"
+    ];
+
+    availableWeekIndexes.forEach(weekIndex => {
+      const current =
+        subtotalData[bu] &&
+        subtotalData[bu].weeks[weekIndex]
+          ? subtotalData[bu].weeks[weekIndex]
+          : {
+              qty: 0,
+              gmv: 0
+            };
+
+      const currentPosition =
+        availableWeekIndexes.indexOf(
+          weekIndex
+        );
+
+      const previousWeekIndex =
+        availableWeekIndexes[
+          currentPosition - 1
+        ];
+
+      let previousQty = 0;
+      let previousGmv = 0;
+
+      if (
+        previousWeekIndex !== undefined &&
+        subtotalData[bu] &&
+        subtotalData[bu].weeks[
+          previousWeekIndex
+        ]
+      ) {
+        previousQty =
+          subtotalData[bu].weeks[
+            previousWeekIndex
+          ].qty;
+
+        previousGmv =
+          subtotalData[bu].weeks[
+            previousWeekIndex
+          ].gmv;
+      }
+
+      const qtyWow =
+        previousQty === 0
+          ? ""
+          : (current.qty - previousQty) /
+            previousQty;
+
+      const gmvWow =
+        previousGmv === 0
+          ? ""
+          : (current.gmv - previousGmv) /
+            previousGmv;
+
+      subtotalRow.push(
+        current.qty,
+        current.gmv,
+        qtyWow,
+        gmvWow
+      );
+
+      platformWeeks[weekIndex].qty +=
+        current.qty;
+
+      platformWeeks[weekIndex].gmv +=
+        current.gmv;
+    });
+
+    subtotalRows.push(
+      outputData.length + 1
+    );
+
+    outputData.push(subtotalRow);
+  });
+
+  // =========================================================
+  // PLATFORM
+  // =========================================================
+
+  const platformRow = [
+    "PLATFORM",
+    ""
+  ];
+
+  availableWeekIndexes.forEach(weekIndex => {
+    const current =
+      platformWeeks[weekIndex];
+
+    const currentPosition =
+      availableWeekIndexes.indexOf(
+        weekIndex
+      );
+
+    const previousWeekIndex =
+      availableWeekIndexes[
+        currentPosition - 1
+      ];
+
+    let previousQty = 0;
+    let previousGmv = 0;
+
+    if (
+      previousWeekIndex !== undefined &&
+      platformWeeks[previousWeekIndex]
+    ) {
+      previousQty =
+        platformWeeks[
+          previousWeekIndex
+        ].qty;
+
+      previousGmv =
+        platformWeeks[
+          previousWeekIndex
+        ].gmv;
+    }
+
+    const qtyWow =
+      previousQty === 0
+        ? ""
+        : (current.qty - previousQty) /
+          previousQty;
+
+    const gmvWow =
+      previousGmv === 0
+        ? ""
+        : (current.gmv - previousGmv) /
+          previousGmv;
+
+    platformRow.push(
+      current.qty,
+      current.gmv,
+      qtyWow,
+      gmvWow
+    );
+  });
+
+  outputData.push(platformRow);
+
+  // =========================================================
+  // WRITE DATA
+  // =========================================================
+
+  output
+    .getRange(
+      1,
+      1,
+      outputData.length,
+      totalColumns
+    )
+    .setValues(outputData);
+
+  output
+    .getRange(
+      1,
+      1,
+      Math.max(
+        output.getMaxRows(),
+        outputData.length + 2
+      ),
+      totalColumns
+    )
+    .setFontFamily("Calibri");
+
+  // =========================================================
+  // HEADERS
+  // =========================================================
+
+  output
+    .getRange(
+      1,
+      1,
+      1,
+      totalColumns
+    )
+    .setFontWeight("bold")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+
+  output
+    .getRange(
+      2,
+      1,
+      1,
+      totalColumns
+    )
+    .setFontWeight("bold")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+
+  output
+    .getRange(
+      2,
+      1,
+      1,
+      2
+    )
+    .setBackground("#D9EAF7")
+    .setFontColor("#000000");
+
+  const weekHeaderColors = [
+    "#4472C4",
+    "#548235",
+    "#C55A11",
+    "#7030A0",
+    "#008C95",
+    "#5B5B5B"
+  ];
+
+  availableWeekIndexes.forEach(
+    (weekIndex, index) => {
+      const startColumn =
+        3 + index * columnsPerWeek;
+
+      output
+        .getRange(
+          1,
+          startColumn,
+          1,
+          columnsPerWeek
+        )
+        .merge();
+
+      output
+        .getRange(
+          1,
+          startColumn,
+          1,
+          columnsPerWeek
+        )
+        .setBackground(
+          weekHeaderColors[
+            index %
+              weekHeaderColors.length
+          ]
+        )
+        .setFontColor("#FFFFFF")
+        .setFontWeight("bold")
+        .setHorizontalAlignment("center")
+        .setVerticalAlignment("middle");
+
+      output
+        .getRange(
+          2,
+          startColumn,
+          1,
+          columnsPerWeek
+        )
+        .setBackground("#D9EAF7")
+        .setFontColor("#000000")
+        .setFontWeight("bold")
+        .setHorizontalAlignment("center")
+        .setVerticalAlignment("middle");
+    }
+  );
+
+  // =========================================================
+  // HEADER BORDERS
+  // =========================================================
+
+  output
+    .getRange(
+      1,
+      1,
+      2,
+      totalColumns
+    )
+    .setBorder(
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      "#808080",
+      SpreadsheetApp.BorderStyle.SOLID
+    );
+
+  // =========================================================
+  // WEEK BORDERS
+  // =========================================================
+
+  availableWeekIndexes.forEach(
+    (weekIndex, index) => {
+      const startColumn =
+        3 + index * columnsPerWeek;
+
+      output
+        .getRange(
+          1,
+          startColumn,
+          outputData.length,
+          columnsPerWeek
+        )
+        .setBorder(
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          "#B7B7B7",
+          SpreadsheetApp.BorderStyle.SOLID
+        );
+
+      // Strong border before each week
+      output
+        .getRange(
+          1,
+          startColumn,
+          outputData.length,
+          1
+        )
+        .setBorder(
+          null,
+          true,
+          null,
+          null,
+          null,
+          null,
+          "#666666",
+          SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+        );
+
+      // Strong border after each week
+      output
+        .getRange(
+          1,
+          startColumn +
+            columnsPerWeek -
+            1,
+          outputData.length,
+          1
+        )
+        .setBorder(
+          null,
+          null,
+          null,
+          true,
+          null,
+          null,
+          "#666666",
+          SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+        );
+    }
+  );
+
+  // =========================================================
+  // STRONG SEPARATOR AFTER SUBCAT
+  // =========================================================
+
+  output
+    .getRange(
+      1,
+      2,
+      outputData.length,
+      1
+    )
+    .setBorder(
+      null,
+      null,
+      null,
+      true,
+      null,
+      null,
+      "#666666",
+      SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+    );
+
+  // =========================================================
+  // BU COLORS
+  // =========================================================
+
+  const buColors = [
+    "#DDEBF7",
+    "#FFF2CC",
+    "#FCE4D6",
+    "#E4DFEC",
+    "#D9EAF7",
+    "#FCE4D6",
+    "#F4CCCC",
+    "#EADCF8",
+    "#F9E2D2",
+    "#DDE2F3"
+  ];
+
+  let dataRowNumber = 3;
+
+  bus.forEach(
+    (bu, buIndex) => {
+      const subcategoryCount =
+        buGroups[bu].length;
+
+      if (subcategoryCount > 0) {
+        output
+          .getRange(
+            dataRowNumber,
+            1,
+            subcategoryCount,
+            totalColumns
+          )
+          .setBackground(
+            buColors[
+              buIndex %
+                buColors.length
+            ]
+          );
+      }
+
+      dataRowNumber +=
+        subcategoryCount + 1;
+    }
+  );
+
+  // =========================================================
+  // SUBTOTAL FORMATTING
+  // =========================================================
+
+  subtotalRows.forEach(rowNumber => {
+    output
+      .getRange(
+        rowNumber,
+        1,
+        1,
+        totalColumns
+      )
+      .setBackground("#D9EAD3")
+      .setFontWeight("bold")
+      .setBorder(
+        true,
+        null,
+        true,
+        null,
+        null,
+        null
+      );
+  });
+
+  // =========================================================
+  // PLATFORM FORMATTING
+  // =========================================================
+
+  const platformRowNumber =
+    outputData.length;
+
+  output
+    .getRange(
+      platformRowNumber,
+      1,
+      1,
+      totalColumns
+    )
+    .setBackground("#CFE2F3")
+    .setFontWeight("bold")
+    .setBorder(
+      true,
+      null,
+      true,
+      null,
+      null,
+      null
+    );
+
+  // =========================================================
+  // NUMBER FORMATS
+  // =========================================================
+
+  availableWeekIndexes.forEach(
+    (weekIndex, index) => {
+      const startColumn =
+        3 + index * columnsPerWeek;
+
+      output
+        .getRange(
+          3,
+          startColumn,
+          outputData.length - 2,
+          1
+        )
+        .setNumberFormat("#,##0");
+
+      output
+        .getRange(
+          3,
+          startColumn + 1,
+          outputData.length - 2,
+          1
+        )
+        .setNumberFormat("#,##0.00");
+
+      output
+        .getRange(
+          3,
+          startColumn + 2,
+          outputData.length - 2,
+          1
+        )
+        .setNumberFormat("0.0%");
+
+      output
+        .getRange(
+          3,
+          startColumn + 3,
+          outputData.length - 2,
+          1
+        )
+        .setNumberFormat("0.0%");
+    }
+  );
+
+  // =========================================================
+  // CONDITIONAL FORMATTING
+  // =========================================================
+
+  const growthRanges = [];
+
+  availableWeekIndexes.forEach(
+    (weekIndex, index) => {
+      const startColumn =
+        3 + index * columnsPerWeek;
+
+      growthRanges.push(
+        output.getRange(
+          3,
+          startColumn + 2,
+          outputData.length - 2,
+          2
+        )
+      );
+    }
+  );
+
+  const conditionalRules = [];
+
+  growthRanges.forEach(range => {
+    conditionalRules.push(
+      SpreadsheetApp
+        .newConditionalFormatRule()
+        .whenNumberLessThan(0)
+        .setBackground("#F4CCCC")
+        .setFontColor("#9C0006")
+        .setRanges([range])
+        .build(),
+
+      SpreadsheetApp
+        .newConditionalFormatRule()
+        .whenNumberBetween(0, 0.10)
+        .setBackground("#FFF2CC")
+        .setFontColor("#9C6500")
+        .setRanges([range])
+        .build(),
+
+      SpreadsheetApp
+        .newConditionalFormatRule()
+        .whenNumberGreaterThan(0.10)
+        .setBackground("#D9EAD3")
+        .setFontColor("#006100")
+        .setRanges([range])
+        .build()
+    );
+  });
+
+  output.setConditionalFormatRules(
+    conditionalRules
+  );
+
+  // =========================================================
+  // ALIGNMENT
+  // =========================================================
+
+  output
+    .getRange(
+      3,
+      3,
+      Math.max(
+        outputData.length - 2,
+        1
+      ),
+      totalColumns - 2
+    )
+    .setHorizontalAlignment("center");
+
+  output
+    .getRange(
+      3,
+      1,
+      Math.max(
+        outputData.length - 2,
+        1
+      ),
+      2
+    )
+    .setHorizontalAlignment("left");
+
+  // =========================================================
+  // FREEZE
+  // =========================================================
+
+  output.setFrozenRows(2);
+  output.setFrozenColumns(2);
+
+  // =========================================================
+  // COLUMN WIDTHS
+  // =========================================================
+
+  output.setColumnWidth(1, 150);
+  output.setColumnWidth(2, 190);
+
+  availableWeekIndexes.forEach(
+    (weekIndex, index) => {
+      const startColumn =
+        3 + index * columnsPerWeek;
+
+      output.setColumnWidth(
+        startColumn,
+        85
+      );
+
+      output.setColumnWidth(
+        startColumn + 1,
+        90
+      );
+
+      output.setColumnWidth(
+        startColumn + 2,
+        105
+      );
+
+      output.setColumnWidth(
+        startColumn + 3,
+        110
+      );
+    }
+  );
+
+  output.setRowHeight(1, 30);
+  output.setRowHeight(2, 25);
+
+  // =========================================================
+  // FILTER
+  // =========================================================
+
+  if (outputData.length > 2) {
+    output
+      .getRange(
+        2,
+        1,
+        outputData.length - 1,
+        totalColumns
+      )
+      .createFilter();
+  }
+
+  // =========================================================
+  // HIDE FIRST PREVIOUS-MONTH COMPARISON WEEK
+  // =========================================================
+
+  const firstBucket = weekBuckets[
+    availableWeekIndexes[0]
+  ];
+
+  if (firstBucket.end < monthStart) {
+    output.hideColumns(
+      3,
+      columnsPerWeek
+    );
+  }
+}
